@@ -96,7 +96,7 @@ for base_model, t_value in zip(base, [0.0, 1.0]):
 
     max_error = 0.0
     for i, (input, _) in enumerate(loader):
-        input = input.cuda(async=True)
+        input = input.cuda(non_blocking=True)
 
         base_ouput = base_model(input)
         curve_output = curve_model(input, t)
