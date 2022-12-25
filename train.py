@@ -10,6 +10,8 @@ import curves
 import data
 import models
 import utils
+import wandb_utils
+from wandb_utils import log
 
 
 def main(args):
@@ -118,9 +120,18 @@ def main(args):
             )
 
         time_ep = time.time() - time_ep
+
+        log(dict(
+            epoch=epoch,
+            learning_rate=lr,
+            train_loss=train_res['loss'],
+            train_acc=train_res['accuracy'],
+            test_nll=test_res['nll'],
+            test_acc=test_res['accuracy'],
+            epoch_duration=time_ep
+        ))
         values = [epoch, lr, train_res['loss'], train_res['accuracy'], test_res['nll'],
                   test_res['accuracy'], time_ep]
-
         table = tabulate.tabulate([values], columns, tablefmt='simple', floatfmt='9.4f')
         if epoch % 40 == 1 or epoch == start_epoch:
             table = table.split('\n')
@@ -189,6 +200,11 @@ if __name__ == "__main__":
 
     parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
 
+    parser.set_defaults(use_wandb=True)
+    parser.add_argument('--no_wandb', action='store_false', dest='use_wandb',
+                        help='Turns off logging to wandb')
+
     args = parser.parse_args()
+    args = wandb_utils.init_wandb(args)
     main(args)
 
