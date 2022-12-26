@@ -21,15 +21,16 @@ class TargetFunction(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def evaluate(self, predictions_origin: Tensor, predictions: Tensor, labels: Tensor) -> Tensor:
+    def evaluate(self, predictions_origin: Tensor, predictions: Tensor, labels: Tensor, corresponding_coords: Tensor) -> Tensor:
         """
-        For all three inputs, it is expected that the first requested_coordinates.shape[0] entries
-        correspond to the first batch entry, the next to the second and so on.
+        For predictions(_origin) and labels, it is expected that the first batch_size entries
+        correspond to the first coordinate in corresponding_coords, the next to the second and so on.
 
         Both prediction tensors contain unnormalized logits.
-        :param predictions_origin: [batch_size * requested_coordinates.shape[0], num_classes]
-        :param predictions: [batch_size * requested_coordinates.shape[0], num_classes]
-        :param labels: [batch_size * requested_coordinates.shape[0]]
+        :param predictions_origin: [batch_size * num_coords, num_classes]
+        :param predictions: [batch_size * num_coords, num_classes]
+        :param labels: [batch_size * num_coords]
+        :param corresponding_coords: [num_coords, num_dimensions]
         :return:
         """
         pass
@@ -55,15 +56,26 @@ class PixelDifference2D(TargetFunction):
         self.requested_coordinates = torch.stack(grid).T.reshape(-1, 2).cuda()
         return self
 
-    def evaluate(self, predictions_origin: Tensor, predictions: Tensor, labels: Tensor) -> Tensor:
+    def evaluate(self, predictions_origin: Tensor, predictions: Tensor, labels: Tensor, corresponding_coords: Tensor) -> Tensor:
         # TODO note that currently, in contrast to the sightseeing paper, each pixel has the same weight instead of both
         #  colors having the same weight
 
         # Convert unnormalized logits into actual probabilities
         predictions = torch.softmax(predictions, dim=-1)
         predictions_origin = torch.softmax(predictions_origin, dim=-1)
+
+        # convert coords in [0, 1] to [0, height] and [0, width]
+        # round just in case numerical issues give us e.g. 4.99 instead of 5 which would become 4 if casted to int
+        corresponding_coords = torch.round(torch.stack((corresponding_coords[:, 0] * (self.target_shape[0] - 1),
+                                                        corresponding_coords[:, 1] * (self.target_shape[1] - 1)), dim=1)).to(int)
+        # convert to coordinates in flattened vector
+        # TODO I guess, now there is no need to flatten anymore in the first place
+        corresponding_targets = self.target[corresponding_coords[:, 0] * self.target_shape[1] + corresponding_coords[:, 1]]
+        corresponding_targets = corresponding_targets.repeat_interleave(predictions.shape[0])
+
+        #TODO try KL divergence instead of euclidean distance
         return torch.mean(torch.mean(torch.square(predictions - predictions_origin), dim=-1)
-                          * self.target.repeat(predictions.shape[0] // self.target.shape[0]))
+                          * corresponding_targets)
 
 
 __all__ = [PixelDifference2D()]

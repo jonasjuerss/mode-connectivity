@@ -28,7 +28,6 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
         model.train()
     else:
         model.eval()
-    all_coords = None
     for iter, (input, target) in enumerate(train_loader):
         if lr_schedule is not None:
             lr = lr_schedule(iter / num_iters)
@@ -36,32 +35,31 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
         input = input.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
 
-        if coordinates is None:
-            output = model(input)
-        else:
-            if all_coords is None:
-                # expected size of coords: [num_coords, num_dimension (2 for 2D image)]
-                all_coords = coordinates.repeat(input.shape[0], 1)
-            input = torch.repeat_interleave(input, coordinates.shape[0], dim=0)
-            target = torch.repeat_interleave(target, coordinates.shape[0], dim=0)
-            origin, output = model(input, all_coords[:input.shape[0], :])
-
-        loss = F.cross_entropy(output, target)
-        if regularizer is not None:
-            loss += regularizer(model)
-        prediction_loss_sum += loss.item() * input.size(0)
-        landscape_loss = landscape_criterion(origin, output, target)
-        loss = accuracy_weight * loss + landscape_loss
-
+        # Process coordinates 1 by 1 to keep batch_size fixed.
         if train:
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+        for i in range(coordinates.shape[0]):
+            origin, output = model(input, ((coordinates[i])[None, :]).expand(input.shape[0], -1))
 
-        loss_sum += loss.item() * input.size(0)
-        landscape_loss_sum += landscape_loss.item() * input.size(0)
-        pred = output.data.argmax(1, keepdim=True)
-        correct += pred.eq(target.data.view_as(pred)).sum().item()
+            loss = F.cross_entropy(output, target)
+            if regularizer is not None:
+                loss += regularizer(model)
+            prediction_loss_sum += loss.item() * input.size(0)
+            landscape_loss = landscape_criterion(origin, output, target, (coordinates[i])[None, :])
+            loss = accuracy_weight * loss + landscape_loss
+
+            loss_sum += loss.item() * input.size(0)
+            landscape_loss_sum += landscape_loss.item() * input.size(0)
+            pred = output.data.argmax(1, keepdim=True)
+            correct += pred.eq(target.data.view_as(pred)).sum().item()
+
+            if train:
+                # accumulate gradients over all coordinates before actually updating them together
+                # Memory usage would explode if we had to pass all of them at once
+                loss.backward()
+
+        if train:
+            optimizer.step()
 
     num_passes = len(train_loader.dataset) * coordinates.shape[0]
     return {
@@ -140,8 +138,9 @@ def main(args):
         lr = learning_rate_schedule(args.lr, epoch, args.epochs)
         utils.adjust_learning_rate(optimizer, lr)
 
+
         train_res = train_test(loaders['train'], model, optimizer, target_function.evaluate, args.accuracy_weight,
-                               regularizer, coordinates=target_function.requested_coordinates)
+                                   regularizer, coordinates=target_function.requested_coordinates)
         if not has_bn:
             # TODO plot image
             test_res = train_test(loaders['test'], model, optimizer, target_function.evaluate, args.accuracy_weight,
