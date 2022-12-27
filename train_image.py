@@ -1,10 +1,15 @@
 import argparse
 import os
 import sys
+from contextlib import nullcontext
+
 import tabulate
 import time
 import torch
 import torch.nn.functional as F
+from tqdm import tqdm
+
+import wandb
 
 import curves
 import data
@@ -22,44 +27,54 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
     landscape_loss_sum = 0.0
     prediction_loss_sum = 0.0
     correct = 0.0
+    image_data = torch.zeros((coordinates.shape[0], 1))
 
     num_iters = len(train_loader)
     if train:
         model.train()
     else:
         model.eval()
-    for iter, (input, target) in enumerate(train_loader):
-        if lr_schedule is not None:
-            lr = lr_schedule(iter / num_iters)
-            utils.adjust_learning_rate(optimizer, lr)
-        input = input.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
+    # train: 391 iterations, 12:39min for small architecture, test 79 iterations/00:52min
+    with nullcontext() if train else torch.no_grad():
+        for iter, (input, target) in tqdm(enumerate(train_loader)):
+            if lr_schedule is not None:
+                lr = lr_schedule(iter / num_iters)
+                utils.adjust_learning_rate(optimizer, lr)
+            input = input.cuda(non_blocking=True)
+            target = target.cuda(non_blocking=True)
 
-        # Process coordinates 1 by 1 to keep batch_size fixed.
-        if train:
-            optimizer.zero_grad()
-        for i in range(coordinates.shape[0]):
-            origin, output = model(input, ((coordinates[i])[None, :]).expand(input.shape[0], -1))
+            # Process coordinates 1 by 1 to keep batch_size fixed.
+            if train:
+                optimizer.zero_grad()
+            for i in range(coordinates.shape[0]):
+                origin, output = model(input, ((coordinates[i])[None, :]).expand(input.shape[0], -1))
 
-            loss = F.cross_entropy(output, target)
-            if regularizer is not None:
-                loss += regularizer(model)
-            prediction_loss_sum += loss.item() * input.size(0)
-            landscape_loss = landscape_criterion(origin, output, target, (coordinates[i])[None, :])
-            loss = accuracy_weight * loss + landscape_loss
+                loss = F.cross_entropy(output, target)
+                if regularizer is not None:
+                    loss += regularizer(model)
+                prediction_loss_sum += loss.item() * input.size(0)
+                diversity, landscape_loss = landscape_criterion(origin, output, target, (coordinates[i])[None, :])
+                loss = accuracy_weight * loss + landscape_loss
 
-            loss_sum += loss.item() * input.size(0)
-            landscape_loss_sum += landscape_loss.item() * input.size(0)
-            pred = output.data.argmax(1, keepdim=True)
-            correct += pred.eq(target.data.view_as(pred)).sum().item()
+                loss_sum += loss.item() * input.size(0)
+                landscape_loss_sum += landscape_loss.item() * input.size(0)
+                pred = output.data.argmax(1, keepdim=True)
+                correct += pred.eq(target.data.view_as(pred)).sum().item()
+
+                image_data[i] += diversity.item()
+                if train:
+                    # accumulate gradients over all coordinates before actually updating them together
+                    # Memory usage would explode if we had to pass all of them at once
+                    loss.backward()
 
             if train:
-                # accumulate gradients over all coordinates before actually updating them together
-                # Memory usage would explode if we had to pass all of them at once
-                loss.backward()
+                optimizer.step()
 
-        if train:
-            optimizer.step()
+    image_data /= len(train_loader.dataset)
+
+    table = wandb.Table(columns=["x1", "x2", "diversity"])
+    for c in range(len(coordinates)):
+        table.add_data(coordinates[c, 0], coordinates[c, 1], image_data[c])
 
     num_passes = len(train_loader.dataset) * coordinates.shape[0]
     return {
@@ -67,6 +82,7 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
         'landscape_loss': landscape_loss_sum / num_passes,
         'prediction_loss': prediction_loss_sum / num_passes,
         'accuracy': correct * 100.0 / num_passes,
+        'image': table
     }
 
 def main(args):
@@ -103,7 +119,7 @@ def main(args):
         return factor * base_lr
 
     # difference_measure = measure_from_name(args.diversity_function)
-    #criterion = difference_measure.evaluate
+    # criterion = difference_measure.evaluate
     target_function = target_functions.function_from_name(args.landscape_function, args)
     regularizer = None
     optimizer = torch.optim.SGD(
@@ -144,7 +160,7 @@ def main(args):
         if not has_bn:
             # TODO plot image
             test_res = train_test(loaders['test'], model, optimizer, target_function.evaluate, args.accuracy_weight,
-                                  regularizer, coordinates=target_function.requested_coordinates)
+                                  regularizer, coordinates=target_function.requested_coordinates, train=False)
 
         if epoch % args.save_freq == 0:
             utils.save_checkpoint(
@@ -164,11 +180,13 @@ def main(args):
             prediction_loss_train=train_res['prediction_loss'],
             landscape_loss_train=train_res['landscape_loss'],
             acc_train=train_res['accuracy'],
+            image_train=train_res["image"],
 
             loss_test=test_res['loss'],  #nll
             prediction_loss_test=train_res['prediction_loss'],
             landscape_loss_test=train_res['landscape_loss'],
             acc_test=test_res['accuracy'],
+            image_test=test_res["image"],
 
             epoch_duration=time_ep
         ))
