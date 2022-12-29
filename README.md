@@ -74,6 +74,8 @@ Use the `--use_test` flag if you want to use the test set instead of validation 
 
 For example, use the following commands to train VGG16, PreResNet or Wide ResNet:
 ```bash
+# Simple CNN with MNIST
+python3 train.py --dir=<DIR> --dataset=MNIST --data_path=<PATH> --model=MNISTSimple --epochs=50 --lr=0.001 --wd=0 --transform=NoTransform
 #VGG16
 python3 train.py --dir=<DIR> --dataset=[CIFAR10 or CIFAR100] --data_path=<PATH> --model=VGG16 --epochs=200 --lr=0.05 --wd=5e-4 --use_test --transform=VGG
 #PreResNet

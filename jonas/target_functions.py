@@ -37,18 +37,19 @@ class TargetFunction(abc.ABC):
         pass
 
 
-class PixelDifference2D(TargetFunction):
+class PixelDifference2D(TargetFunction, abc.ABC):
     """
     TODO: possibly add an option for grey "don't care" pixels. That can make it more efficient
     """
-    def __init__(self):
-        super().__init__("PixelDifference2D", None)
+    def __init__(self, name: str):
+        super().__init__(name, None)
         self.target = None
 
     def initialize(self, args: Namespace) -> PixelDifference2D:
         # so target will have values like [v(0, 0), ..., v(0, n), v(1,0), ... , v(1, n), ...] where v(x1, x2) = -1 for
         # black pixels and 0 otherwise
-        self.target = torch.Tensor(imageio.imread(f'res/icons/{args.target_image}.png') / 255 - 1.)
+        self.target = 2 * torch.Tensor(imageio.imread(f'res/icons/{args.target_image}.png') / 255 - 0.5)
+        assert len(self.target.shape) == 2
         self.target_shape = self.target.shape
         self.target = self.target.reshape(-1).cuda()
         # can be expanded to more dimensions by just adding more linspaces and increasing the second number in reshape
@@ -57,13 +58,22 @@ class PixelDifference2D(TargetFunction):
         self.requested_coordinates = torch.stack(grid).T.reshape(-1, 2).cuda()
         return self
 
+    @abc.abstractmethod
+    def _measure_difference(self, predictions_origin: Tensor, predictions: Tensor):
+        """
+        The first batch_size entries correspond to the first coordinate in corresponding_coords,
+        the next to the second and so on
+        :param predictions_origin: [batch_size * num_coords]
+        :param predictions: [batch_size * num_coords]
+        :return: [batch_size * num_coords]
+        """
+        pass
     def evaluate(self, predictions_origin: Tensor, predictions: Tensor, labels: Tensor, corresponding_coords: Tensor) -> Tuple[Tensor, Tensor]:
+        """
+        White pixels mean high diversity. Therefore, (0, 0) == white would be unfeasible
+        """
         # TODO note that currently, in contrast to the sightseeing paper, each pixel has the same weight instead of both
         #  colors having the same weight
-
-        # Convert unnormalized logits into actual probabilities
-        predictions = torch.softmax(predictions, dim=-1)
-        predictions_origin = torch.softmax(predictions_origin, dim=-1)
 
         # convert coords in [0, 1] to [0, height] and [0, width]
         # round just in case numerical issues give us e.g. 4.99 instead of 5 which would become 4 if casted to int
@@ -73,14 +83,41 @@ class PixelDifference2D(TargetFunction):
         # TODO I guess, now there is no need to flatten anymore in the first place
         corresponding_targets = self.target[corresponding_coords[:, 0] * self.target_shape[1] + corresponding_coords[:, 1]]
 
-        # TODO try KL divergence instead of euclidean distance
-        diversities = torch.mean(torch.square(predictions - predictions_origin), dim=-1)  # [batch_size * num_coords]
+        diversities = self._measure_difference(predictions_origin, predictions)
         # grouped mean for each coordinate. Only necessary because we want to return the diversity
         diversities = torch.mean(diversities.reshape(corresponding_coords.shape[0], -1), dim=1)
         return diversities, torch.mean(diversities * corresponding_targets)
 
+class Euclidean2D(PixelDifference2D):
+    def __init__(self):
+        super().__init__("Euclidean2D")
 
-__all__ = [PixelDifference2D()]
+    def _measure_difference(self, predictions_origin: Tensor, predictions: Tensor):
+        """
+        :return: The euclidean distance between the predicted probabilities at the origin and the predicted
+        probabilities at the given position
+        """
+        # Convert unnormalized logits into actual probabilities
+        predictions = torch.softmax(predictions, dim=-1)
+        predictions_origin = torch.softmax(predictions_origin, dim=-1)
+        return torch.mean(torch.square(predictions - predictions_origin), dim=-1)
+
+class CrossEntropy2D(PixelDifference2D):
+    def __init__(self):
+        super().__init__("CrossEntropy2D")
+    def _measure_difference(self, predictions_origin: Tensor, predictions: Tensor):
+        """
+        :return: The cross entropy between the predicted probabilities at the origin and the predicted
+        probabilities at the given position
+        """
+        # Whereas log probabilities are expected for the input,
+        predictions_origin = torch.softmax(predictions_origin, dim=-1)
+        return torch.nn.functional.cross_entropy(predictions, predictions_origin, reduction='none')
+
+
+
+
+__all__ = [Euclidean2D(), CrossEntropy2D()]
 
 
 def function_from_name(name: str, args: Namespace) -> TargetFunction:

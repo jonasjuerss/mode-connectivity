@@ -82,7 +82,7 @@ for base_model, path, k in zip(base, [args.init_start, args.init_end], [0, args.
 if args.init_linear:
     print('Linear initialization.')
     curve_model.init_linear()
-curve_model.cuda()
+curve_model = curve_model.cuda()
 for base_model in base:
     base_model.cuda()
 

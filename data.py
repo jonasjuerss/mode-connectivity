@@ -38,6 +38,11 @@ class Transforms:
 
     CIFAR100 = CIFAR10
 
+    class MNIST:
+        class NoTransform:
+            train = transforms.ToTensor()
+            test = transforms.ToTensor()
+
 
 def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=False,
             shuffle_train=True):
@@ -50,16 +55,28 @@ def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=Fal
         print('You are going to run models on the test set. Are you sure?')
         test_set = ds(path, train=False, download=True, transform=transform.test)
     else:
-        print("Using train (45000) + validation (5000)")
-        train_set.train_data = train_set.train_data[:-5000]
-        train_set.targets = train_set.targets[:-5000]
+        if dataset == "MNIST":
+            print("Using train (9000) + validation (1000)")
+            train_set.data = train_set.data[:-1000]
+            train_set.targets = train_set.targets[:-1000]
 
-        test_set = ds(path, train=True, download=True, transform=transform.test)
-        test_set.train = False
-        test_set.test_data = test_set.train_data[-5000:]
-        test_set.test_labels = test_set.targets[-5000:]
-        delattr(test_set, 'train_data')
-        delattr(test_set, 'targets')
+            test_set = ds(path, train=True, download=True, transform=transform.test)
+            test_set.train = False
+            test_set.data = test_set.data[-1000:]
+            test_set.targets = test_set.targets[-1000:]
+            # delattr(test_set, 'data')
+            # delattr(test_set, 'targets')
+        else:
+            print("Using train (45000) + validation (5000)")
+            train_set.train_data = train_set.train_data[:-5000]
+            train_set.targets = train_set.targets[:-5000]
+
+            test_set = ds(path, train=True, download=True, transform=transform.test)
+            test_set.train = False
+            test_set.test_data = test_set.train_data[-5000:]
+            test_set.test_labels = test_set.targets[-5000:]
+            delattr(test_set, 'train_data')
+            delattr(test_set, 'targets')
 
     return {
                'train': torch.utils.data.DataLoader(

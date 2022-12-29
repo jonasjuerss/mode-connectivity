@@ -28,7 +28,8 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
     prediction_loss_sum = 0.0
     correct = 0.0
     image_data = torch.zeros((coordinates.shape[0], 1))
-
+    # scale down (prediction) loss because it is accumulated over coordinates
+    coordinate_scale = 1. / coordinates.shape[0]
     num_iters = len(train_loader)
     if train:
         model.train()
@@ -49,12 +50,14 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
             for i in range(coordinates.shape[0]):
                 origin, output = model(input, ((coordinates[i])[None, :]).expand(input.shape[0], -1))
 
-                loss = F.cross_entropy(output, target)
+                loss = coordinate_scale * F.cross_entropy(output, target)
                 if regularizer is not None:
                     loss += regularizer(model)
                 prediction_loss_sum += loss.item() * input.size(0)
                 diversity, landscape_loss = landscape_criterion(origin, output, target, (coordinates[i])[None, :])
-                loss = accuracy_weight * loss + landscape_loss
+                landscape_loss = coordinate_scale * landscape_loss
+                loss = accuracy_weight * loss + (1 - accuracy_weight) * landscape_loss
+                assert not torch.isnan(loss).item()
 
                 loss_sum += loss.item() * input.size(0)
                 landscape_loss_sum += landscape_loss.item() * input.size(0)
@@ -76,12 +79,12 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
     for c in range(len(coordinates)):
         table.add_data(coordinates[c, 0], coordinates[c, 1], image_data[c])
 
-    num_passes = len(train_loader.dataset) * coordinates.shape[0]
+    num_passes = len(train_loader.dataset) # note that we already divide by coordinates.shape[0] in coordinate_scale
     return {
         'loss': loss_sum / num_passes,
         'landscape_loss': landscape_loss_sum / num_passes,
         'prediction_loss': prediction_loss_sum / num_passes,
-        'accuracy': correct * 100.0 / num_passes,
+        'accuracy': correct * 100.0 / (num_passes * coordinates.shape[0]),
         'image': table
     }
 
@@ -267,7 +270,7 @@ if __name__ == "__main__":
     # parser.add_argument('--diversity_function', type=str, default="SquaredProbabilityDistance",
     #                     help='The difference function between networks to use as diversity measure')
 
-    parser.add_argument('--landscape_function', type=str, default="PixelDifference2D",
+    parser.add_argument('--landscape_function', type=str, default="CrossEntropy2D",
                         help='The function to optimize the diversity landscape for')
     parser.add_argument('--target_image', type=str, default=None,
                         help='The name of the target image in the icons folder')
