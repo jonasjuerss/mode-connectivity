@@ -50,6 +50,7 @@ def loaders(dataset, path, batch_size, num_workers, transform_name, scale=1.0, u
     path = os.path.join(path, dataset.lower())
     transform = getattr(getattr(Transforms, dataset), transform_name)
     train_set = ds(path, train=True, download=True, transform=transform.train)
+    num_classes = max(train_set.targets) + 1
 
     if use_test:
         print('You are going to run models on the test set. Are you sure?')
@@ -78,8 +79,8 @@ def loaders(dataset, path, batch_size, num_workers, transform_name, scale=1.0, u
             delattr(test_set, 'train_data')
             delattr(test_set, 'targets')
     if scale < 1.0:
-        train_set = torch.utils.data.Subset(train_set, torch.randperm(len(train_set))[:int(round(len(train_set)*scale))]).dataset
-        test_set = torch.utils.data.Subset(test_set, torch.randperm(len(test_set))[:int(round(len(test_set)*scale))]).dataset
+        train_set = torch.utils.data.Subset(train_set, torch.randperm(len(train_set))[:int(round(len(train_set)*scale))])
+        test_set = torch.utils.data.Subset(test_set, torch.randperm(len(test_set))[:int(round(len(test_set)*scale))])
 
     return {
                'train': torch.utils.data.DataLoader(
@@ -96,4 +97,4 @@ def loaders(dataset, path, batch_size, num_workers, transform_name, scale=1.0, u
                    num_workers=num_workers,
                    pin_memory=True
                ),
-           }, max(train_set.targets) + 1
+           }, num_classes
