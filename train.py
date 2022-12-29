@@ -30,6 +30,7 @@ def main(args):
         args.batch_size,
         args.num_workers,
         args.transform,
+        args.dataset_scale,
         args.use_test
     )
 
@@ -197,6 +198,8 @@ if __name__ == "__main__":
                         help='SGD momentum (default: 0.9)')
     parser.add_argument('--wd', type=float, default=1e-4, metavar='WD',
                         help='weight decay (default: 1e-4)')
+    parser.add_argument('--dataset_scale', type=float, default=1,
+                        help='a factor in [0, 1] that allows to scale down the data used')
 
     parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
 

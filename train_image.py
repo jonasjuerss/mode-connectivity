@@ -37,7 +37,7 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
         model.eval()
     # train: 391 iterations, 12:39min for small architecture, test 79 iterations/00:52min
     with nullcontext() if train else torch.no_grad():
-        for iter, (input, target) in tqdm(enumerate(train_loader)):
+        for iter, (input, target) in tqdm(enumerate(train_loader), total=num_iters):
             if lr_schedule is not None:
                 lr = lr_schedule(iter / num_iters)
                 utils.adjust_learning_rate(optimizer, lr)
@@ -50,21 +50,26 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
             for i in range(coordinates.shape[0]):
                 origin, output = model(input, ((coordinates[i])[None, :]).expand(input.shape[0], -1))
 
-                loss = coordinate_scale * F.cross_entropy(output, target)
+                prediction_loss = coordinate_scale * F.cross_entropy(output, target)
                 if regularizer is not None:
-                    loss += regularizer(model)
-                prediction_loss_sum += loss.item() * input.size(0)
+                    prediction_loss += regularizer(model)
+                prediction_loss_sum += prediction_loss.item() * input.size(0)
                 diversity, landscape_loss = landscape_criterion(origin, output, target, (coordinates[i])[None, :])
                 landscape_loss = coordinate_scale * landscape_loss
-                loss = accuracy_weight * loss + (1 - accuracy_weight) * landscape_loss
+                loss = accuracy_weight * prediction_loss + (1 - accuracy_weight) * landscape_loss
                 assert not torch.isnan(loss).item()
 
                 loss_sum += loss.item() * input.size(0)
                 landscape_loss_sum += landscape_loss.item() * input.size(0)
                 pred = output.data.argmax(1, keepdim=True)
-                correct += pred.eq(target.data.view_as(pred)).sum().item()
+                correct_preds = 100 * coordinate_scale * pred.eq(target.data.view_as(pred)).sum().item()
+                correct += correct_preds
 
-                image_data[i] += diversity.item()
+                image_data[i, 0] += diversity.item()
+                image_data[i, 1] += landscape_loss.item()
+                image_data[i, 2] += correct_preds
+                image_data[i, 3] += prediction_loss.item()
+                image_data[i, 4] += loss.item()
                 if train:
                     # accumulate gradients over all coordinates before actually updating them together
                     # Memory usage would explode if we had to pass all of them at once
@@ -75,16 +80,16 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
 
     image_data /= len(train_loader.dataset)
 
-    table = wandb.Table(columns=["x1", "x2", "diversity"])
+    table = wandb.Table(columns=["x1", "x2", "diversity", "landscape_loss", "accuracy", "prediction_loss", "loss"])
     for c in range(len(coordinates)):
-        table.add_data(coordinates[c, 0], coordinates[c, 1], image_data[c])
+        table.add_data(coordinates[c, 0], coordinates[c, 1], *image_data[c])
 
     num_passes = len(train_loader.dataset) # note that we already divide by coordinates.shape[0] in coordinate_scale
     return {
         'loss': loss_sum / num_passes,
         'landscape_loss': landscape_loss_sum / num_passes,
         'prediction_loss': prediction_loss_sum / num_passes,
-        'accuracy': correct * 100.0 / (num_passes * coordinates.shape[0]),
+        'accuracy': correct / num_passes,
         'image': table
     }
 
@@ -104,6 +109,7 @@ def main(args):
         args.batch_size,
         args.num_workers,
         args.transform,
+        args.dataset_scale,
         args.use_test
     )
 
@@ -254,6 +260,8 @@ if __name__ == "__main__":
                         help='SGD momentum (default: 0.9)')
     parser.add_argument('--wd', type=float, default=1e-4, metavar='WD',
                         help='weight decay (default: 1e-4)')
+    parser.add_argument('--dataset_scale', type=float, default=1,
+                        help='a factor in [0, 1] that allows to scale down the data used')
 
     parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
 

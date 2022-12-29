@@ -44,7 +44,7 @@ class Transforms:
             test = transforms.ToTensor()
 
 
-def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=False,
+def loaders(dataset, path, batch_size, num_workers, transform_name, scale=1.0, use_test=False,
             shuffle_train=True):
     ds = getattr(torchvision.datasets, dataset)
     path = os.path.join(path, dataset.lower())
@@ -56,14 +56,14 @@ def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=Fal
         test_set = ds(path, train=False, download=True, transform=transform.test)
     else:
         if dataset == "MNIST":
-            print("Using train (9000) + validation (1000)")
-            train_set.data = train_set.data[:-1000]
-            train_set.targets = train_set.targets[:-1000]
+            print("Using train (50000) + validation (10000)")
+            train_set.data = train_set.data[:-10000]
+            train_set.targets = train_set.targets[:-10000]
 
             test_set = ds(path, train=True, download=True, transform=transform.test)
             test_set.train = False
-            test_set.data = test_set.data[-1000:]
-            test_set.targets = test_set.targets[-1000:]
+            test_set.data = test_set.data[-10000:]
+            test_set.targets = test_set.targets[-10000:]
             # delattr(test_set, 'data')
             # delattr(test_set, 'targets')
         else:
@@ -77,6 +77,9 @@ def loaders(dataset, path, batch_size, num_workers, transform_name, use_test=Fal
             test_set.test_labels = test_set.targets[-5000:]
             delattr(test_set, 'train_data')
             delattr(test_set, 'targets')
+    if scale < 1.0:
+        train_set = torch.utils.data.Subset(train_set, torch.randperm(len(train_set))[:int(round(len(train_set)*scale))]).dataset
+        test_set = torch.utils.data.Subset(test_set, torch.randperm(len(test_set))[:int(round(len(test_set)*scale))]).dataset
 
     return {
                'train': torch.utils.data.DataLoader(
