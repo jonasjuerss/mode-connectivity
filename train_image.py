@@ -27,7 +27,7 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
     landscape_loss_sum = 0.0
     prediction_loss_sum = 0.0
     correct = 0.0
-    image_data = torch.zeros((coordinates.shape[0], 1))
+    image_data = torch.zeros((coordinates.shape[0], 5))
     # scale down (prediction) loss because it is accumulated over coordinates
     coordinate_scale = 1. / coordinates.shape[0]
     num_iters = len(train_loader)
