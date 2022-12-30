@@ -1,7 +1,7 @@
-from __future__ import annotations # Allow using class type in class definition
+from __future__ import annotations  # Allow using class type in class definition
 
 import abc
-from typing import Union, Tuple
+from typing import Union, Tuple, List
 
 import imageio.v2 as imageio
 from argparse import Namespace
@@ -38,6 +38,7 @@ class TargetFunction(abc.ABC):
         """
         pass
 
+
 class PixelDifference2D(TargetFunction, abc.ABC):
     def __init__(self, name: str):
         super().__init__(name, None)
@@ -46,9 +47,16 @@ class PixelDifference2D(TargetFunction, abc.ABC):
     def initialize(self, args: Namespace) -> PixelDifference2D:
         # so target will have values like [v(0, 0), ..., v(0, n), v(1,0), ... , v(1, n), ...] where v(x1, x2) = -1 for
         # black pixels and 0 otherwise
-        self.target = 2 * torch.Tensor(imageio.imread(f'res/icons/{args.target_image}.png') / 255 - 0.5)
+        self.target = torch.Tensor(imageio.imread(f'res/icons/{args.target_image}.png') // 255)
         assert len(self.target.shape) == 2
         self.target_shape = self.target.shape
+        if args.equal_weight_colors:
+            white_percentage = self.target.sum() / (self.target_shape[0] * self.target_shape[1])
+            self.target = self.target * ((0.5 / white_percentage) + (0.5 / (1 - white_percentage))) - (0.5 / (1 - white_percentage))
+            # self.target[self.target == 1] = 0.5 / white_percentage
+            # self.target[self.target == 0] = -0.5 / (1 - white_percentage)
+        else:
+            self.target = 2 * (self.target - 0.5)
         self.target = self.target.reshape(-1).cuda()
         # can be expanded to more dimensions by just adding more linspaces and increasing the second number in reshape
         grid = torch.meshgrid(torch.linspace(0, 1, steps=self.target_shape[0]),
@@ -67,6 +75,7 @@ class PixelDifference2D(TargetFunction, abc.ABC):
         :return: [batch_size * num_coords]
         """
         pass
+
     def evaluate(self, predictions_origin: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
                  corresponding_coords: Tensor) -> Tuple[Tensor, Tensor]:
         """
@@ -78,15 +87,18 @@ class PixelDifference2D(TargetFunction, abc.ABC):
         # convert coords in [0, 1] to [0, height] and [0, width]
         # round just in case numerical issues give us e.g. 4.99 instead of 5 which would become 4 if casted to int
         corresponding_coords = torch.round(torch.stack((corresponding_coords[:, 0] * (self.target_shape[0] - 1),
-                                                        corresponding_coords[:, 1] * (self.target_shape[1] - 1)), dim=1)).to(int)
+                                                        corresponding_coords[:, 1] * (self.target_shape[1] - 1)),
+                                                       dim=1)).to(int)
         # convert to coordinates in flattened vector
         # TODO I guess, now there is no need to flatten anymore in the first place
-        corresponding_targets = self.target[corresponding_coords[:, 0] * self.target_shape[1] + corresponding_coords[:, 1]]
+        corresponding_targets = self.target[
+            corresponding_coords[:, 0] * self.target_shape[1] + corresponding_coords[:, 1]]
 
         diversities = self._measure_loss(predictions_origin, predictions, prediction_losses)
         # grouped mean for each coordinate. Only necessary because we want to return the diversity
         diversities = torch.mean(diversities.reshape(corresponding_coords.shape[0], -1), dim=1)
         return diversities, torch.mean(diversities * corresponding_targets)
+
 
 class Euclidean2D(PixelDifference2D):
     def __init__(self):
@@ -103,9 +115,11 @@ class Euclidean2D(PixelDifference2D):
         # Constant scaling factor so the result is roughly of magnitude 1 in the beginning. Note this means we can get a loss close to 10^6 later on
         return 5e3 * torch.mean(torch.square(predictions - predictions_origin), dim=-1)
 
+
 class CrossEntropy2D(PixelDifference2D):
     def __init__(self):
         super().__init__("CrossEntropy2D")
+
     def _measure_loss(self, predictions_origin: Tensor, predictions: Tensor, prediction_losses: Tensor):
         """
         :return: The cross entropy between the predicted probabilities at the origin and the predicted
@@ -114,6 +128,7 @@ class CrossEntropy2D(PixelDifference2D):
         # Whereas log probabilities are expected for the input,
         predictions_origin = torch.softmax(predictions_origin, dim=-1)
         return torch.nn.functional.cross_entropy(predictions, predictions_origin, reduction='none')
+
 
 class Loss2D(PixelDifference2D):
 
@@ -124,8 +139,7 @@ class Loss2D(PixelDifference2D):
         return prediction_losses
 
 
-
-__all__ = [Euclidean2D(), CrossEntropy2D(), Loss2D()]
+__all__: List[TargetFunction] = [Euclidean2D(), CrossEntropy2D(), Loss2D()]
 
 
 def function_from_name(name: str, args: Namespace) -> TargetFunction:

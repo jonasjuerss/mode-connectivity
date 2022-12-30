@@ -1,23 +1,20 @@
 import argparse
 import os
 import sys
+import time
 from contextlib import nullcontext
 
 import tabulate
-import time
 import torch
 import torch.nn.functional as F
+import wandb
 from tqdm import tqdm
 
-import wandb
-
-import curves
 import data
 import models
 import utils
 import wandb_utils
 from jonas import target_functions
-from jonas.difference_measures import measure_from_name
 from jonas.landscape_module import LandscapeModule
 from wandb_utils import log
 
@@ -52,7 +49,8 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
                 prediction_loss = F.cross_entropy(output, target)
                 if regularizer is not None:
                     prediction_loss += regularizer(model)
-                diversity, landscape_loss = landscape_criterion(origin, output, target, prediction_loss.reshape(1, 1), (coordinates[i])[None, :])
+                diversity, landscape_loss = landscape_criterion(origin, output, target, prediction_loss.reshape(1, 1),
+                                                                (coordinates[i])[None, :])
                 loss = accuracy_weight * prediction_loss + (1 - accuracy_weight) * landscape_loss
                 assert not torch.isnan(loss).item()
 
@@ -171,9 +169,8 @@ def main(args):
 
 
         train_res = train_test(loaders['train'], model, optimizer, target_function.evaluate, args.accuracy_weight,
-                                   regularizer, coordinates=target_function.requested_coordinates)
+                               regularizer, coordinates=target_function.requested_coordinates)
         if not has_bn:
-            # TODO plot image
             test_res = train_test(loaders['test'], model, optimizer, target_function.evaluate, args.accuracy_weight,
                                   regularizer, coordinates=target_function.requested_coordinates, train=False)
 
@@ -276,11 +273,16 @@ if __name__ == "__main__":
                              'E.g. 2 for a "normal" image')
     parser.set_defaults(orthonormal_base=False)
     parser.add_argument('--orthonormal_base', action='store_true', dest='orthonormal_base',
-                        help='')
+                        help='Whether the base of the landscape should be forced to be orthonormal. Currently not supported.')
     parser.set_defaults(learn_scaling_factor=True)
     parser.add_argument('--no_scaling_factor', action='store_false', dest='learn_scaling_factor',
                         help='Whether to learn an additional scaling factor for the image like the loss landscape '
                              'sightseeing paper does for their orthonormal base.')
+    parser.set_defaults(equal_weight_colors=False)
+    parser.add_argument('--equal_weight_colors', action='store_true', dest='equal_weight_colors',
+                        help='Whether the two colors (black and white) in target images should have the same weight like'
+                             'in the sightseeing paper. By default, each pixel has the same weight which might lead to a'
+                             'preference of just going into the loss/diversity direction that matches more pixels.')
     # parser.add_argument('--diversity_function', type=str, default="SquaredProbabilityDistance",
     #                     help='The difference function between networks to use as diversity measure')
 
