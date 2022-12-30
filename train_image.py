@@ -26,10 +26,9 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
     loss_sum = 0.0
     landscape_loss_sum = 0.0
     prediction_loss_sum = 0.0
-    correct = 0.0
+    accuracy = 0.0
     image_data = torch.zeros((coordinates.shape[0], 5))
     # scale down (prediction) loss because it is accumulated over coordinates
-    coordinate_scale = 1. / coordinates.shape[0]
     num_iters = len(train_loader)
     if train:
         model.train()
@@ -50,26 +49,32 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
             for i in range(coordinates.shape[0]):
                 origin, output = model(input, ((coordinates[i])[None, :]).expand(input.shape[0], -1))
 
-                prediction_loss = coordinate_scale * F.cross_entropy(output, target)
+                prediction_loss = F.cross_entropy(output, target)
                 if regularizer is not None:
                     prediction_loss += regularizer(model)
-                prediction_loss_sum += prediction_loss.item() * input.size(0)
                 diversity, landscape_loss = landscape_criterion(origin, output, target, (coordinates[i])[None, :])
-                landscape_loss = coordinate_scale * landscape_loss
                 loss = accuracy_weight * prediction_loss + (1 - accuracy_weight) * landscape_loss
                 assert not torch.isnan(loss).item()
 
-                loss_sum += loss.item() * input.size(0)
-                landscape_loss_sum += landscape_loss.item() * input.size(0)
                 pred = output.data.argmax(1, keepdim=True)
-                correct_preds = 100 * coordinate_scale * pred.eq(target.data.view_as(pred)).sum().item()
-                correct += correct_preds
+                acc = 100 * pred.eq(target.data.view_as(pred)).to(float).mean().item()
 
                 image_data[i, 0] += diversity.item()
                 image_data[i, 1] += landscape_loss.item()
-                image_data[i, 2] += correct_preds
+                image_data[i, 2] += acc
                 image_data[i, 3] += prediction_loss.item()
                 image_data[i, 4] += loss.item()
+
+                # Important: don't just move that into loss_sum as it is also used in backward()
+                loss = loss / coordinates.shape[0]
+                prediction_loss = prediction_loss / coordinates.shape[0]
+                landscape_loss = landscape_loss / coordinates.shape[0]
+
+                loss_sum += loss.item() * input.size(0)
+                prediction_loss_sum += prediction_loss.item() * input.size(0)
+                landscape_loss_sum += landscape_loss.item() * input.size(0)
+                accuracy += acc / coordinates.shape[0]
+
                 if train:
                     # accumulate gradients over all coordinates before actually updating them together
                     # Memory usage would explode if we had to pass all of them at once
@@ -78,18 +83,18 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
             if train:
                 optimizer.step()
 
-    image_data /= len(train_loader.dataset)
+    image_data /= num_iters
 
     table = wandb.Table(columns=["x1", "x2", "diversity", "landscape_loss", "accuracy", "prediction_loss", "loss"])
-    for c in range(len(coordinates)):
+    for c in range(coordinates.shape[0]):
         table.add_data(coordinates[c, 0], coordinates[c, 1], *image_data[c])
 
-    num_passes = len(train_loader.dataset) # note that we already divide by coordinates.shape[0] in coordinate_scale
+    num_passes = len(train_loader.dataset)  # note that we already divide by coordinates.shape[0] in coordinate_scale
     return {
         'loss': loss_sum / num_passes,
         'landscape_loss': landscape_loss_sum / num_passes,
         'prediction_loss': prediction_loss_sum / num_passes,
-        'accuracy': correct / num_passes,
+        'accuracy': accuracy / num_iters,
         'image': table
     }
 
