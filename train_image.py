@@ -22,7 +22,7 @@ from jonas.landscape_module import LandscapeModule
 from wandb_utils import log
 
 
-def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_weight, regularizer=None, lr_schedule=None, coordinates=None, train=True):
+def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criterion, accuracy_weight, regularizer=None, lr_schedule=None, coordinates=None, train=True):
     loss_sum = 0.0
     landscape_loss_sum = 0.0
     prediction_loss_sum = 0.0
@@ -95,7 +95,8 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
         'landscape_loss': landscape_loss_sum / num_passes,
         'prediction_loss': prediction_loss_sum / num_passes,
         'accuracy': accuracy / num_iters,
-        'image': table
+        'image': table,
+        'scaling_factor': model.scaling_factor.item()
     }
 
 def main(args):
