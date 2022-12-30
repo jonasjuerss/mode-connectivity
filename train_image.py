@@ -52,7 +52,7 @@ def train_test(train_loader, model, optimizer, landscape_criterion, accuracy_wei
                 prediction_loss = F.cross_entropy(output, target)
                 if regularizer is not None:
                     prediction_loss += regularizer(model)
-                diversity, landscape_loss = landscape_criterion(origin, output, target, (coordinates[i])[None, :])
+                diversity, landscape_loss = landscape_criterion(origin, output, target, prediction_loss.reshape(1, 1), (coordinates[i])[None, :])
                 loss = accuracy_weight * prediction_loss + (1 - accuracy_weight) * landscape_loss
                 assert not torch.isnan(loss).item()
 

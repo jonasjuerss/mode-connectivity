@@ -21,7 +21,8 @@ class TargetFunction(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def evaluate(self, predictions_origin: Tensor, predictions: Tensor, labels: Tensor, corresponding_coords: Tensor) -> Tuple[Tensor, Tensor]:
+    def evaluate(self, predictions_origin: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
+                 corresponding_coords: Tensor) -> Tuple[Tensor, Tensor]:
         """
         For predictions(_origin) and labels, it is expected that the first batch_size entries
         correspond to the first coordinate in corresponding_coords, the next to the second and so on.
@@ -30,17 +31,14 @@ class TargetFunction(abc.ABC):
         :param predictions_origin: [batch_size * num_coords, num_classes]
         :param predictions: [batch_size * num_coords, num_classes]
         :param labels: [batch_size * num_coords]
+        :param prediction_losses: [batch_size * num_coords]
         :param corresponding_coords: [num_coords, num_dimensions]
         :return: (diversities, loss) where diversities is a [num_coords] tensor with the diversity for each coordinate
         and loss is the overall loss
         """
         pass
 
-
 class PixelDifference2D(TargetFunction, abc.ABC):
-    """
-    TODO: possibly add an option for grey "don't care" pixels. That can make it more efficient
-    """
     def __init__(self, name: str):
         super().__init__(name, None)
         self.target = None
@@ -59,16 +57,18 @@ class PixelDifference2D(TargetFunction, abc.ABC):
         return self
 
     @abc.abstractmethod
-    def _measure_difference(self, predictions_origin: Tensor, predictions: Tensor):
+    def _measure_loss(self, predictions_origin: Tensor, predictions: Tensor, prediction_losses: Tensor):
         """
         The first batch_size entries correspond to the first coordinate in corresponding_coords,
         the next to the second and so on
         :param predictions_origin: [batch_size * num_coords]
         :param predictions: [batch_size * num_coords]
+        :param prediction_losses: [batch_size * num_coords]
         :return: [batch_size * num_coords]
         """
         pass
-    def evaluate(self, predictions_origin: Tensor, predictions: Tensor, labels: Tensor, corresponding_coords: Tensor) -> Tuple[Tensor, Tensor]:
+    def evaluate(self, predictions_origin: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
+                 corresponding_coords: Tensor) -> Tuple[Tensor, Tensor]:
         """
         White pixels mean high diversity. Therefore, (0, 0) == white would be unfeasible
         """
@@ -83,7 +83,7 @@ class PixelDifference2D(TargetFunction, abc.ABC):
         # TODO I guess, now there is no need to flatten anymore in the first place
         corresponding_targets = self.target[corresponding_coords[:, 0] * self.target_shape[1] + corresponding_coords[:, 1]]
 
-        diversities = self._measure_difference(predictions_origin, predictions)
+        diversities = self._measure_loss(predictions_origin, predictions, prediction_losses)
         # grouped mean for each coordinate. Only necessary because we want to return the diversity
         diversities = torch.mean(diversities.reshape(corresponding_coords.shape[0], -1), dim=1)
         return diversities, torch.mean(diversities * corresponding_targets)
@@ -92,7 +92,7 @@ class Euclidean2D(PixelDifference2D):
     def __init__(self):
         super().__init__("Euclidean2D")
 
-    def _measure_difference(self, predictions_origin: Tensor, predictions: Tensor):
+    def _measure_loss(self, predictions_origin: Tensor, predictions: Tensor, prediction_losses: Tensor):
         """
         :return: The euclidean distance between the predicted probabilities at the origin and the predicted
         probabilities at the given position
@@ -100,12 +100,13 @@ class Euclidean2D(PixelDifference2D):
         # Convert unnormalized logits into actual probabilities
         predictions = torch.softmax(predictions, dim=-1)
         predictions_origin = torch.softmax(predictions_origin, dim=-1)
-        return torch.mean(torch.square(predictions - predictions_origin), dim=-1)
+        # Constant scaling factor so the result is roughly of magnitude 1 in the beginning. Note this means we can get a loss close to 10^6 later on
+        return 5e3 * torch.mean(torch.square(predictions - predictions_origin), dim=-1)
 
 class CrossEntropy2D(PixelDifference2D):
     def __init__(self):
         super().__init__("CrossEntropy2D")
-    def _measure_difference(self, predictions_origin: Tensor, predictions: Tensor):
+    def _measure_loss(self, predictions_origin: Tensor, predictions: Tensor, prediction_losses: Tensor):
         """
         :return: The cross entropy between the predicted probabilities at the origin and the predicted
         probabilities at the given position
@@ -114,10 +115,17 @@ class CrossEntropy2D(PixelDifference2D):
         predictions_origin = torch.softmax(predictions_origin, dim=-1)
         return torch.nn.functional.cross_entropy(predictions, predictions_origin, reduction='none')
 
+class Loss2D(PixelDifference2D):
+
+    def __init__(self):
+        super().__init__("Loss2D")
+
+    def _measure_loss(self, predictions_origin: Tensor, predictions: Tensor, prediction_losses: Tensor):
+        return prediction_losses
 
 
 
-__all__ = [Euclidean2D(), CrossEntropy2D()]
+__all__ = [Euclidean2D(), CrossEntropy2D(), Loss2D()]
 
 
 def function_from_name(name: str, args: Namespace) -> TargetFunction:
