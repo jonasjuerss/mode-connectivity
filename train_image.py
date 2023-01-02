@@ -44,13 +44,14 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
             if train:
                 optimizer.zero_grad()
             for i in range(coordinates.shape[0]):
-                origin, output = model(input, ((coordinates[i])[None, :]).expand(input.shape[0], -1))
+                coords = (coordinates[i, :])[None, :]
+                output = model(input, coords.expand(input.shape[0], -1))
 
                 prediction_loss = F.cross_entropy(output, target)
                 if regularizer is not None:
                     prediction_loss += regularizer(model)
-                diversity, landscape_loss = landscape_criterion(origin, output, target, prediction_loss.reshape(1, 1),
-                                                                (coordinates[i])[None, :])
+                diversity, landscape_loss = landscape_criterion(input, output, target, prediction_loss.reshape(1, 1),
+                                                                coords, model)
                 loss = accuracy_weight * prediction_loss + (1 - accuracy_weight) * landscape_loss
                 assert not torch.isnan(loss).item()
 

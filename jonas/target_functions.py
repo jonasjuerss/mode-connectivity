@@ -10,6 +10,10 @@ import imageio
 import torch
 from torch import Tensor
 
+from jonas.coordinate_networks import CoordinateModule
+
+device = torch.device("cuda")
+
 
 class TargetFunction(abc.ABC):
     def __init__(self, name: str, requested_coordinates: Union[Tensor, None]):
@@ -21,14 +25,14 @@ class TargetFunction(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def evaluate(self, predictions_origin: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                 corresponding_coords: Tensor) -> Tuple[Tensor, Tensor]:
+    def evaluate(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
+                 corresponding_coords: Tensor, module: CoordinateModule) -> Tuple[Tensor, Tensor]:
         """
         For predictions(_origin) and labels, it is expected that the first batch_size entries
         correspond to the first coordinate in corresponding_coords, the next to the second and so on.
 
         Both prediction tensors contain unnormalized logits.
-        :param predictions_origin: [batch_size * num_coords, num_classes]
+        :param inputs: [batch_size * num_coords, *input_dims]
         :param predictions: [batch_size * num_coords, num_classes]
         :param labels: [batch_size * num_coords]
         :param prediction_losses: [batch_size * num_coords]
@@ -65,19 +69,19 @@ class PixelDifference2D(TargetFunction, abc.ABC):
         return self
 
     @abc.abstractmethod
-    def _measure_loss(self, predictions_origin: Tensor, predictions: Tensor, prediction_losses: Tensor):
+    def _measure_loss(self, inputs: Tensor, predictions: Tensor, prediction_losses: Tensor,
+                      corresponding_coords: Tensor, module: CoordinateModule):
         """
         The first batch_size entries correspond to the first coordinate in corresponding_coords,
         the next to the second and so on
-        :param predictions_origin: [batch_size * num_coords]
         :param predictions: [batch_size * num_coords]
         :param prediction_losses: [batch_size * num_coords]
         :return: [batch_size * num_coords]
         """
         pass
 
-    def evaluate(self, predictions_origin: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                 corresponding_coords: Tensor) -> Tuple[Tensor, Tensor]:
+    def evaluate(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
+                 corresponding_coords: Tensor, module: CoordinateModule) -> Tuple[Tensor, Tensor]:
         """
         White pixels mean high diversity. Therefore, (0, 0) == white would be unfeasible
         """
@@ -94,7 +98,7 @@ class PixelDifference2D(TargetFunction, abc.ABC):
         corresponding_targets = self.target[
             corresponding_coords[:, 0] * self.target_shape[1] + corresponding_coords[:, 1]]
 
-        diversities = self._measure_loss(predictions_origin, predictions, prediction_losses)
+        diversities = self._measure_loss(inputs, predictions, prediction_losses, corresponding_coords, module)
         # grouped mean for each coordinate. Only necessary because we want to return the diversity
         diversities = torch.mean(diversities.reshape(corresponding_coords.shape[0], -1), dim=1)
         return diversities, torch.mean(diversities * corresponding_targets)
@@ -104,14 +108,15 @@ class Euclidean2D(PixelDifference2D):
     def __init__(self):
         super().__init__("Euclidean2D")
 
-    def _measure_loss(self, predictions_origin: Tensor, predictions: Tensor, prediction_losses: Tensor):
+    def _measure_loss(self, inputs: Tensor, predictions: Tensor, prediction_losses: Tensor,
+                      corresponding_coords: Tensor, module: CoordinateModule):
         """
         :return: The euclidean distance between the predicted probabilities at the origin and the predicted
         probabilities at the given position
         """
         # Convert unnormalized logits into actual probabilities
         predictions = torch.softmax(predictions, dim=-1)
-        predictions_origin = torch.softmax(predictions_origin, dim=-1)
+        predictions_origin = torch.softmax(module(inputs, torch.tensor(0)), dim=-1)
         # Constant scaling factor so the result is roughly of magnitude 1 in the beginning. Note this means we can get a loss close to 10^6 later on
         return 5e3 * torch.mean(torch.square(predictions - predictions_origin), dim=-1)
 
@@ -120,13 +125,14 @@ class CrossEntropy2D(PixelDifference2D):
     def __init__(self):
         super().__init__("CrossEntropy2D")
 
-    def _measure_loss(self, predictions_origin: Tensor, predictions: Tensor, prediction_losses: Tensor):
+    def _measure_loss(self, inputs: Tensor, predictions: Tensor, prediction_losses: Tensor,
+                      corresponding_coords: Tensor, module: CoordinateModule):
         """
         :return: The cross entropy between the predicted probabilities at the origin and the predicted
         probabilities at the given position
         """
         # Whereas log probabilities are expected for the input,
-        predictions_origin = torch.softmax(predictions_origin, dim=-1)
+        predictions_origin = torch.softmax(module(inputs, torch.zeros((1, corresponding_coords.shape[-1]), device=device)), dim=-1)
         return torch.nn.functional.cross_entropy(predictions, predictions_origin, reduction='none')
 
 
@@ -135,7 +141,8 @@ class Loss2D(PixelDifference2D):
     def __init__(self):
         super().__init__("Loss2D")
 
-    def _measure_loss(self, predictions_origin: Tensor, predictions: Tensor, prediction_losses: Tensor):
+    def _measure_loss(self, inputs: Tensor, predictions: Tensor, prediction_losses: Tensor,
+                      corresponding_coords: Tensor, module: CoordinateModule):
         return prediction_losses
 
 

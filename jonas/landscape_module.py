@@ -3,6 +3,9 @@ import abc
 import torch.nn
 from torch.nn import Module, ModuleList, Parameter
 
+from jonas.coordinate_networks import convert_to_coord_modules
+from loss_patterns.src.layers.layer_ops import convert_sequential_model_to_op
+
 
 class LandscapeModule(Module):
 
@@ -21,8 +24,9 @@ class LandscapeModule(Module):
         if learn_scaling_factor:
             self.scaling_factor = Parameter(self.scaling_factor)
 
-        self.base_networks = ModuleList([architecture.base(num_classes=num_classes, **architecture.kwargs)
-                                         for _ in range(num_dimensions + 1)])
+        self.coord_network = convert_to_coord_modules(*[architecture.base(num_classes=num_classes,
+                                                                          **architecture.kwargs)
+                                                        for _ in range(num_dimensions + 1)])
 
     def forward(self, data, coords):
         """
@@ -30,11 +34,8 @@ class LandscapeModule(Module):
         :param coords: [batch_size, num_dimensions]
         :return: [batch_size, num_classes]
         """
+        coords = self.scaling_factor * coords
         if self.orthonormal_base:
             raise NotImplementedError()
         else:
-            res = self.base_networks[0](data)
-            origin = res
-            for i, net in enumerate(self.base_networks[1:]):
-                res = res + self.scaling_factor * (coords[:, i])[:, None] * net(data)
-        return origin, res
+            return self.coord_network(data, coords)
