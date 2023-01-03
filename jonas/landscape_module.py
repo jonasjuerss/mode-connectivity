@@ -1,10 +1,9 @@
 import abc
 
 import torch.nn
-from torch.nn import Module, ModuleList, Parameter
+from torch.nn import Module, Parameter
 
 from jonas.coordinate_networks import convert_to_coord_modules
-from loss_patterns.src.layers.layer_ops import convert_sequential_model_to_op
 
 
 class LandscapeModule(Module):

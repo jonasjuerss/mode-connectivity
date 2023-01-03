@@ -69,7 +69,7 @@ class PixelDifference2D(TargetFunction, abc.ABC):
         return self
 
     @abc.abstractmethod
-    def _measure_loss(self, inputs: Tensor, predictions: Tensor, prediction_losses: Tensor,
+    def _measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
                       corresponding_coords: Tensor, module: CoordinateModule):
         """
         The first batch_size entries correspond to the first coordinate in corresponding_coords,
@@ -98,7 +98,7 @@ class PixelDifference2D(TargetFunction, abc.ABC):
         corresponding_targets = self.target[
             corresponding_coords[:, 0] * self.target_shape[1] + corresponding_coords[:, 1]]
 
-        diversities = self._measure_loss(inputs, predictions, prediction_losses, corresponding_coords, module)
+        diversities = self._measure_loss(inputs, predictions, labels, prediction_losses, corresponding_coords, module)
         # grouped mean for each coordinate. Only necessary because we want to return the diversity
         diversities = torch.mean(diversities.reshape(corresponding_coords.shape[0], -1), dim=1)
         return diversities, torch.mean(diversities * corresponding_targets)
@@ -108,7 +108,7 @@ class Euclidean2D(PixelDifference2D):
     def __init__(self):
         super().__init__("Euclidean2D")
 
-    def _measure_loss(self, inputs: Tensor, predictions: Tensor, prediction_losses: Tensor,
+    def _measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
                       corresponding_coords: Tensor, module: CoordinateModule):
         """
         :return: The euclidean distance between the predicted probabilities at the origin and the predicted
@@ -125,7 +125,7 @@ class CrossEntropy2D(PixelDifference2D):
     def __init__(self):
         super().__init__("CrossEntropy2D")
 
-    def _measure_loss(self, inputs: Tensor, predictions: Tensor, prediction_losses: Tensor,
+    def _measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
                       corresponding_coords: Tensor, module: CoordinateModule):
         """
         :return: The cross entropy between the predicted probabilities at the origin and the predicted
@@ -141,10 +141,9 @@ class Loss2D(PixelDifference2D):
     def __init__(self):
         super().__init__("Loss2D")
 
-    def _measure_loss(self, inputs: Tensor, predictions: Tensor, prediction_losses: Tensor,
+    def _measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
                       corresponding_coords: Tensor, module: CoordinateModule):
         return prediction_losses
-
 
 __all__: List[TargetFunction] = [Euclidean2D(), CrossEntropy2D(), Loss2D()]
 

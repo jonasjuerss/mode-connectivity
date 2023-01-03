@@ -84,7 +84,7 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
 
     image_data /= num_iters
 
-    table = wandb.Table(columns=["x1", "x2", "diversity", "landscape_loss", "accuracy", "prediction_loss", "loss"])
+    table = wandb.Table(columns=["x1", "x2", "landscape_metric", "landscape_loss", "accuracy", "prediction_loss", "loss"])
     for c in range(coordinates.shape[0]):
         table.add_data(coordinates[c, 0], coordinates[c, 1], *image_data[c])
 
@@ -188,6 +188,7 @@ def main(args):
         log(dict(
             epoch=epoch,
             learning_rate=lr,
+            scaling_factor=train_res["scaling_factor"],
 
             loss_train=train_res['loss'],
             prediction_loss_train=train_res['prediction_loss'],
