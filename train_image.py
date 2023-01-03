@@ -3,6 +3,7 @@ import os
 import sys
 import time
 from contextlib import nullcontext
+from typing import List, cast
 
 import tabulate
 import torch
@@ -16,15 +17,18 @@ import utils
 import wandb_utils
 from jonas import target_functions
 from jonas.landscape_module import LandscapeModule
+from jonas.target_functions import TargetFunction, PixelDifference2D
 from wandb_utils import log
 
 
-def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criterion, accuracy_weight, regularizer=None, lr_schedule=None, coordinates=None, train=True):
+def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criterion: TargetFunction,
+               plot_functions: List[PixelDifference2D], accuracy_weight, regularizer=None, lr_schedule=None,
+               coordinates=None, train=True):
     loss_sum = 0.0
     landscape_loss_sum = 0.0
     prediction_loss_sum = 0.0
     accuracy = 0.0
-    image_data = torch.zeros((coordinates.shape[0], 5))
+    image_data = torch.zeros((coordinates.shape[0], 5 + len(plot_functions)))
     # scale down (prediction) loss because it is accumulated over coordinates
     num_iters = len(train_loader)
     if train:
@@ -50,19 +54,30 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
                 prediction_loss = F.cross_entropy(output, target)
                 if regularizer is not None:
                     prediction_loss += regularizer(model)
-                diversity, landscape_loss = landscape_criterion(input, output, target, prediction_loss.reshape(1, 1),
-                                                                coords, model)
+                landscape_metric, landscape_loss = landscape_criterion.evaluate(input, output, target,
+                                                                         prediction_loss.reshape(1, 1), coords, model)
+
                 loss = accuracy_weight * prediction_loss + (1 - accuracy_weight) * landscape_loss
                 assert not torch.isnan(loss).item()
 
                 pred = output.data.argmax(1, keepdim=True)
                 acc = 100 * pred.eq(target.data.view_as(pred)).to(float).mean().item()
 
-                image_data[i, 0] += diversity.item()
+                image_data[i, 0] += landscape_metric.item()
                 image_data[i, 1] += landscape_loss.item()
                 image_data[i, 2] += acc
                 image_data[i, 3] += prediction_loss.item()
                 image_data[i, 4] += loss.item()
+
+                with torch.no_grad() if train else nullcontext():
+                    for j, fun in enumerate(plot_functions):
+                        # Here, we know that we only feed information over a single coordinate so we can just take the
+                        # overall mean as opposed to the per-coordinate mean calculated in the evaluate() method
+                        image_data[i, 5 + j] += torch.mean(fun.measure_loss(input, output, target,
+                                                                            prediction_loss.reshape(1, 1), coords,
+                                                                            model)).item()
+
+
 
                 # Important: don't just move that into loss_sum as it is also used in backward()
                 loss = loss / coordinates.shape[0]
@@ -84,7 +99,8 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
 
     image_data /= num_iters
 
-    table = wandb.Table(columns=["x1", "x2", "landscape_metric", "landscape_loss", "accuracy", "prediction_loss", "loss"])
+    table = wandb.Table(columns=["x1", "x2", landscape_criterion.name, "landscape_loss", "accuracy", "prediction_loss",
+                                 "loss"] + [f.name for f in plot_functions])
     for c in range(coordinates.shape[0]):
         table.add_data(coordinates[c, 0], coordinates[c, 1], *image_data[c])
 
@@ -135,6 +151,10 @@ def main(args):
     # difference_measure = measure_from_name(args.diversity_function)
     # criterion = difference_measure.evaluate
     target_function = target_functions.function_from_name(args.landscape_function, args)
+    if args.landscape_function in args.plot_metrics:
+        args.plot_metrics.remove(args.landscape_function)
+    plot_functions = [target_functions.function_from_name(f, args) for f in args.plot_metrics]
+    plot_functions = cast(List[PixelDifference2D], plot_functions)
     regularizer = None
     optimizer = torch.optim.SGD(
         filter(lambda param: param.requires_grad, model.parameters()),
@@ -146,10 +166,15 @@ def main(args):
     start_epoch = 1
     if args.resume is not None:
         print('Resume training from %s' % args.resume)
+        print("CAUTION: if you used --data_scale < 1, the data subset was random and a different subset will be taken"
+              "now. This means \"training\" plot in the begining are more like evaluation plots (depending on how"
+              "small your scale was) and if you continue training, this is not equivalent to if you had not stopped the"
+              " run!")
         checkpoint = torch.load(args.resume)
         start_epoch = checkpoint['epoch'] + 1
         model.load_state_dict(checkpoint['model_state'])
         optimizer.load_state_dict(checkpoint['optimizer_state'])
+
 
     columns = ['ep', 'lr', 'tr_loss', 'tr_acc', 'te_nll', 'te_acc', 'time']
 
@@ -169,10 +194,10 @@ def main(args):
         utils.adjust_learning_rate(optimizer, lr)
 
 
-        train_res = train_test(loaders['train'], model, optimizer, target_function.evaluate, args.accuracy_weight,
+        train_res = train_test(loaders['train'], model, optimizer, target_function, plot_functions, args.accuracy_weight,
                                regularizer, coordinates=target_function.requested_coordinates)
         if not has_bn:
-            test_res = train_test(loaders['test'], model, optimizer, target_function.evaluate, args.accuracy_weight,
+            test_res = train_test(loaders['test'], model, optimizer, target_function, plot_functions, args.accuracy_weight,
                                   regularizer, coordinates=target_function.requested_coordinates, train=False)
 
         if epoch % args.save_freq == 0:
@@ -295,6 +320,8 @@ if __name__ == "__main__":
     parser.add_argument('--accuracy_weight', type=float, default=0,
                         help='The weight of the actual prediction accuracy. By default, this is 0, so the network only'
                              'tries to attain the diversity image without improving the actual prediction accuracy')
+    parser.add_argument('--plot_metrics', nargs='+', default=[],
+                        help='Enforces plotting additional landscape metrics, even if they are not required for the landscape loss')
 
     parser.set_defaults(use_wandb=True)
     parser.add_argument('--no_wandb', action='store_false', dest='use_wandb',
