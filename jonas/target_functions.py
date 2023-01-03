@@ -116,9 +116,10 @@ class Euclidean2D(PixelDifference2D):
         """
         # Convert unnormalized logits into actual probabilities
         predictions = torch.softmax(predictions, dim=-1)
-        predictions_origin = torch.softmax(module(inputs, torch.tensor(0)), dim=-1)
+        predictions_origin = torch.softmax(module(inputs, torch.zeros((1, corresponding_coords.shape[-1]),
+                                                                      device=device)), dim=-1)
         # Constant scaling factor so the result is roughly of magnitude 1 in the beginning. Note this means we can get a loss close to 10^6 later on
-        return 5e3 * torch.mean(torch.square(predictions - predictions_origin), dim=-1)
+        return 1e3 * torch.mean(torch.square(predictions - predictions_origin), dim=-1)
 
 
 class CrossEntropy2D(PixelDifference2D):
