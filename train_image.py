@@ -83,7 +83,7 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
                                                                                 prediction_loss.reshape(1, 1), coords,
                                                                                 model)).item()
                         for j, fun in enumerate(multi_plot_functions):
-                            multi_image_data[i, j] = torch.mean(fun.measure_loss(input, output, target,
+                            multi_image_data[i, j] += torch.mean(fun.measure_loss(input, output, target,
                                                                                  prediction_loss.reshape(1, 1),
                                                                                  coords, model)).item()
                 # Important: don't just move that into loss_sum as it is also used in backward()
@@ -123,7 +123,7 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
                         coords = (coordinates[i, :])[None, :]
                         output = model(input, coords.expand(input.shape[0], -1))
                         for j, fun in enumerate(multi_plot_functions):
-                            multi_image_data[i + i_plot * coordinates.shape[0], j] = torch.mean(fun.measure_loss(input, output, target,
+                            multi_image_data[i + i_plot * coordinates.shape[0], j] += torch.mean(fun.measure_loss(input, output, target,
                                                                                  prediction_loss.reshape(1, 1),
                                                                                  coords, model,
                                                                                  max_diversity_positions[j])).item()

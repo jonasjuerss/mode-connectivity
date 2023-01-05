@@ -141,9 +141,9 @@ class CrossEntropy2D(PixelDifference2D):
         predictions_origin = torch.softmax(module(inputs, compared_coords), dim=-1)
         return torch.nn.functional.cross_entropy(predictions, predictions_origin, reduction='none')
 
-class PredictionDifference(PixelDifference2D):
+class ClassificationDifference(PixelDifference2D):
     def __init__(self):
-        super().__init__("PredictionDifference")
+        super().__init__("ClassificationDifference")
 
     def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
                      corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
@@ -156,7 +156,30 @@ class PredictionDifference(PixelDifference2D):
             compared_coords = torch.zeros((1, corresponding_coords.shape[-1]), device=device)
 
         predictions_origin = module(inputs, compared_coords)
-        return 1.0 - (torch.argmax(predictions_origin, dim=-1) == torch.argmax(predictions, dim=-1)).to(float)
+        return (torch.argmax(predictions_origin, dim=-1) != torch.argmax(predictions, dim=-1)).to(float)
+
+class ClassificationErrorDifference(PixelDifference2D):
+    def __init__(self):
+        super().__init__("ClassificationErrorDifference")
+
+    def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
+        """
+        :return: The cross entropy between the predicted probabilities at the origin and the predicted
+        probabilities at the given position
+        """
+        # Whereas log probabilities are expected for the input,
+        if compared_coords is None:
+            compared_coords = torch.zeros((1, corresponding_coords.shape[-1]), device=device)
+
+        labels_origin = torch.argmax(module(inputs, compared_coords), dim=-1)
+        labels_here = torch.argmax(predictions, dim=-1)
+        differing_entries = labels_origin != labels_here
+        # equivalent to (but more efficient than) torch.logical_or(labels_origin != labels, labels_here != labels)
+        erroneous_predictions = torch.logical_or(labels_origin != labels, differing_entries)
+        # The constant factor in the end accounts for the fact that the parent class will just take the average over all
+        # points instead of just the relevant ones (with erroneous prediction)
+        return differing_entries.to(float) * (torch.numel(labels_origin) / torch.sum(erroneous_predictions))
 
 
 class Loss2D(PixelDifference2D):
@@ -169,7 +192,8 @@ class Loss2D(PixelDifference2D):
         return prediction_losses
 
 
-__all__: List[TargetFunction] = [Euclidean2D(), CrossEntropy2D(), Loss2D(), PredictionDifference()]
+__all__: List[TargetFunction] = [Euclidean2D(), CrossEntropy2D(), Loss2D(), ClassificationDifference(),
+                                 ClassificationErrorDifference()]
 
 
 def function_from_name(name: str, args: Namespace) -> TargetFunction:
