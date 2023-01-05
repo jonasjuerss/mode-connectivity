@@ -57,7 +57,8 @@ class PixelDifference2D(TargetFunction, abc.ABC):
         self.target_shape = self.target.shape
         if args.equal_weight_colors:
             white_percentage = self.target.sum() / (self.target_shape[0] * self.target_shape[1])
-            self.target = self.target * ((0.5 / white_percentage) + (0.5 / (1 - white_percentage))) - (0.5 / (1 - white_percentage))
+            self.target = self.target * ((0.5 / white_percentage) + (0.5 / (1 - white_percentage))) - (
+                        0.5 / (1 - white_percentage))
             # self.target[self.target == 1] = 0.5 / white_percentage
             # self.target[self.target == 0] = -0.5 / (1 - white_percentage)
         else:
@@ -71,7 +72,7 @@ class PixelDifference2D(TargetFunction, abc.ABC):
 
     @abc.abstractmethod
     def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                     corresponding_coords: Tensor, module: LandscapeModule):
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
         """
         The first batch_size entries correspond to the first coordinate in corresponding_coords,
         the next to the second and so on
@@ -108,17 +109,19 @@ class Euclidean2D(PixelDifference2D):
         super().__init__("Euclidean2D")
 
     def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                     corresponding_coords: Tensor, module: LandscapeModule):
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
         """
         :return: The euclidean distance between the predicted probabilities at the origin and the predicted
         probabilities at the given position
         """
+        if compared_coords is None:
+            compared_coords = torch.zeros((1, corresponding_coords.shape[-1]), device=device)
+
         # Convert unnormalized logits into actual probabilities
         predictions = torch.softmax(predictions, dim=-1)
-        predictions_origin = torch.softmax(module(inputs, torch.zeros((1, corresponding_coords.shape[-1]),
-                                                                      device=device)), dim=-1)
+        predictions_origin = torch.softmax(module(inputs, compared_coords), dim=-1)
         # Constant scaling factor so the result is roughly of magnitude 1 in the beginning. Note this means we can get a loss close to 10^6 later on
-        return 1e3 * torch.mean(torch.square(predictions - predictions_origin), dim=-1)
+        return 5e2 * torch.mean(torch.square(predictions - predictions_origin), dim=-1)
 
 
 class CrossEntropy2D(PixelDifference2D):
@@ -126,13 +129,16 @@ class CrossEntropy2D(PixelDifference2D):
         super().__init__("CrossEntropy2D")
 
     def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                     corresponding_coords: Tensor, module: LandscapeModule):
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
         """
         :return: The cross entropy between the predicted probabilities at the origin and the predicted
         probabilities at the given position
         """
         # Whereas log probabilities are expected for the input,
-        predictions_origin = torch.softmax(module(inputs, torch.zeros((1, corresponding_coords.shape[-1]), device=device)), dim=-1)
+        if compared_coords is None:
+            compared_coords = torch.zeros((1, corresponding_coords.shape[-1]), device=device)
+
+        predictions_origin = torch.softmax(module(inputs, compared_coords), dim=-1)
         return torch.nn.functional.cross_entropy(predictions, predictions_origin, reduction='none')
 
 
@@ -142,8 +148,9 @@ class Loss2D(PixelDifference2D):
         super().__init__("Loss2D")
 
     def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                     corresponding_coords: Tensor, module: LandscapeModule):
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
         return prediction_losses
+
 
 __all__: List[TargetFunction] = [Euclidean2D(), CrossEntropy2D(), Loss2D()]
 

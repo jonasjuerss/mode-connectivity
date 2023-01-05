@@ -22,13 +22,16 @@ from wandb_utils import log
 
 
 def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criterion: TargetFunction,
-               plot_functions: List[PixelDifference2D], accuracy_weight, regularizer=None, lr_schedule=None,
-               coordinates=None, train=True):
+               plot_functions: List[PixelDifference2D], multi_plot_functions: List[PixelDifference2D],
+               multi_plot_iterations, accuracy_weight, regularizer=None, lr_schedule=None, coordinates=None, train=True):
     loss_sum = 0.0
     landscape_loss_sum = 0.0
     prediction_loss_sum = 0.0
     accuracy = 0.0
     image_data = torch.zeros((coordinates.shape[0], 5 + len(plot_functions)))
+    if multi_plot_functions:
+        multi_image_data = torch.zeros((multi_plot_iterations * coordinates.shape[0], len(multi_plot_functions)))
+
     # scale down (prediction) loss because it is accumulated over coordinates
     num_iters = len(train_loader)
     if train:
@@ -55,7 +58,8 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
                 if regularizer is not None:
                     prediction_loss += regularizer(model)
                 landscape_metric, landscape_loss = landscape_criterion.evaluate(input, output, target,
-                                                                         prediction_loss.reshape(1, 1), coords, model)
+                                                                                prediction_loss.reshape(1, 1), coords,
+                                                                                model)
 
                 loss = accuracy_weight * prediction_loss + (1 - accuracy_weight) * landscape_loss
                 assert not torch.isnan(loss).item()
@@ -69,16 +73,19 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
                 image_data[i, 3] += prediction_loss.item()
                 image_data[i, 4] += loss.item()
 
-                with torch.no_grad() if train else nullcontext():
-                    for j, fun in enumerate(plot_functions):
-                        # Here, we know that we only feed information over a single coordinate so we can just take the
-                        # overall mean as opposed to the per-coordinate mean calculated in the evaluate() method
-                        image_data[i, 5 + j] += torch.mean(fun.measure_loss(input, output, target,
-                                                                            prediction_loss.reshape(1, 1), coords,
-                                                                            model)).item()
-
-
-
+                if plot_functions or multi_plot_functions: # Only enter context if actually necessary
+                    with torch.no_grad() if train else nullcontext():
+                        for j, fun in enumerate(plot_functions):
+                            # Here, we know that we only feed information over a single coordinate so we can just
+                            # take the overall mean as opposed to the per-coordinate mean calculated in the evaluate()
+                            # method
+                            image_data[i, 5 + j] += torch.mean(fun.measure_loss(input, output, target,
+                                                                                prediction_loss.reshape(1, 1), coords,
+                                                                                model)).item()
+                        for j, fun in enumerate(multi_plot_functions):
+                            multi_image_data[i, j] = torch.mean(fun.measure_loss(input, output, target,
+                                                                                 prediction_loss.reshape(1, 1),
+                                                                                 coords, model)).item()
                 # Important: don't just move that into loss_sum as it is also used in backward()
                 loss = loss / coordinates.shape[0]
                 prediction_loss = prediction_loss / coordinates.shape[0]
@@ -93,9 +100,36 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
                     # accumulate gradients over all coordinates before actually updating them together
                     # Memory usage would explode if we had to pass all of them at once
                     loss.backward()
-
             if train:
                 optimizer.step()
+
+            # Iterate over data batch again for creating the subsequent multi plots
+        if multi_plot_functions:
+            for i_plot in range(1, multi_plot_iterations):
+                max_diversity_positions = []
+                for j in range(0, len(multi_plot_functions)):
+                    # shape: [num_coords]
+                    min_diversity, _ = torch.min(multi_image_data[:, j].reshape(multi_plot_iterations,
+                                                                                coordinates.shape[0])[:i_plot],
+                                                 dim=0)
+                    max_diversity_positions.append(coordinates[torch.argmax(min_diversity)][None, :])
+
+                for iter, (input, target) in tqdm(enumerate(train_loader), total=num_iters):
+                    input = input.cuda(non_blocking=True)
+                    target = target.cuda(non_blocking=True)
+
+                    # Process coordinates 1 by 1 to keep batch_size fixed.
+                    for i in range(coordinates.shape[0]):
+                        coords = (coordinates[i, :])[None, :]
+                        output = model(input, coords.expand(input.shape[0], -1))
+                        for j, fun in enumerate(multi_plot_functions):
+                            multi_image_data[i + i_plot * coordinates.shape[0], j] = torch.mean(fun.measure_loss(input, output, target,
+                                                                                 prediction_loss.reshape(1, 1),
+                                                                                 coords, model,
+                                                                                 max_diversity_positions[j])).item()
+
+
+
 
     image_data /= num_iters
 
@@ -105,7 +139,7 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
         table.add_data(coordinates[c, 0], coordinates[c, 1], *image_data[c])
 
     num_passes = len(train_loader.dataset)  # note that we already divide by coordinates.shape[0] in coordinate_scale
-    return {
+    res = {
         'loss': loss_sum / num_passes,
         'landscape_loss': landscape_loss_sum / num_passes,
         'prediction_loss': prediction_loss_sum / num_passes,
@@ -113,6 +147,16 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
         'image': table,
         'scaling_factor': model.scaling_factor.item()
     }
+
+    if multi_plot_functions:
+        multi_table = wandb.Table(columns=["x1", "x2", "iteration"] + [f.name for f in multi_plot_functions])
+        multi_image_data /= num_iters
+        for c in range(coordinates.shape[0]):
+            for i_plot in range(multi_plot_iterations):
+                multi_table.add_data(coordinates[c, 0], coordinates[c, 1], i_plot, *multi_image_data[i_plot * coordinates.shape[0] + c])
+        res["multi_plots"] = multi_table
+    return res
+
 
 def main(args):
     os.makedirs(args.dir, exist_ok=True)
@@ -135,7 +179,8 @@ def main(args):
     )
 
     architecture = getattr(models, args.model)
-    model = LandscapeModule(architecture, num_classes, args.landscape_dimensions, args.orthonormal_base, args.learn_scaling_factor)
+    model = LandscapeModule(architecture, num_classes, args.landscape_dimensions, args.orthonormal_base,
+                            args.learn_scaling_factor)
     model.cuda()
 
     def learning_rate_schedule(base_lr, epoch, total_epochs):
@@ -155,6 +200,8 @@ def main(args):
         args.plot_metrics.remove(args.landscape_function)
     plot_functions = [target_functions.function_from_name(f, args) for f in args.plot_metrics]
     plot_functions = cast(List[PixelDifference2D], plot_functions)
+    multi_plot_functions = [target_functions.function_from_name(f, args) for f in args.multi_plot_metrics]
+    multi_plot_functions = cast(List[PixelDifference2D], multi_plot_functions)
     regularizer = None
     optimizer = torch.optim.SGD(
         filter(lambda param: param.requires_grad, model.parameters()),
@@ -175,7 +222,6 @@ def main(args):
         model.load_state_dict(checkpoint['model_state'])
         optimizer.load_state_dict(checkpoint['optimizer_state'])
 
-
     columns = ['ep', 'lr', 'tr_loss', 'tr_acc', 'te_nll', 'te_acc', 'time']
 
     utils.save_checkpoint(
@@ -187,18 +233,44 @@ def main(args):
 
     has_bn = utils.check_bn(model)
     test_res = {'loss': None, 'accuracy': None, 'nll': None}
-    for epoch in range(start_epoch, args.epochs + 1):
+    for epoch in range(start_epoch, (start_epoch if args.test_only else args.epochs) + 1):
         time_ep = time.time()
 
         lr = learning_rate_schedule(args.lr, epoch, args.epochs)
         utils.adjust_learning_rate(optimizer, lr)
 
+        log_dict = dict(
+            epoch=epoch,
+            learning_rate=lr
+        )
 
-        train_res = train_test(loaders['train'], model, optimizer, target_function, plot_functions, args.accuracy_weight,
-                               regularizer, coordinates=target_function.requested_coordinates)
+        if not args.test_only:
+            train_res = train_test(loaders['train'], model, optimizer, target_function, plot_functions, [],
+                                   args.multi_plot_iterations, args.accuracy_weight, regularizer,
+                                   coordinates=target_function.requested_coordinates)
+            log_dict.update(dict(
+                scaling_factor=train_res["scaling_factor"],
+
+                loss_train=train_res['loss'],
+                prediction_loss_train=train_res['prediction_loss'],
+                landscape_loss_train=train_res['landscape_loss'],
+                acc_train=train_res['accuracy'],
+                image_train=train_res["image"]))
         if not has_bn:
-            test_res = train_test(loaders['test'], model, optimizer, target_function, plot_functions, args.accuracy_weight,
-                                  regularizer, coordinates=target_function.requested_coordinates, train=False)
+            test_res = train_test(loaders['test'], model, optimizer, target_function, plot_functions,
+                                  multi_plot_functions, args.multi_plot_iterations, args.accuracy_weight, regularizer,
+                                  coordinates=target_function.requested_coordinates, train=False)
+            log_dict.update(dict(
+                scaling_factor=test_res["scaling_factor"],
+
+                loss_test=test_res['loss'],  # nll
+                prediction_loss_test=test_res['prediction_loss'],
+                landscape_loss_test=test_res['landscape_loss'],
+                acc_test=test_res['accuracy'],
+                image_test=test_res["image"],
+            ))
+            if multi_plot_functions:
+                log_dict["multi_plots"] = test_res["multi_plots"]
 
         if epoch % args.save_freq == 0:
             utils.save_checkpoint(
@@ -208,36 +280,18 @@ def main(args):
                 optimizer_state=optimizer.state_dict()
             )
 
-        time_ep = time.time() - time_ep
+        log_dict["epoch_duration"] = time.time() - time_ep
+        log(log_dict)
 
-        log(dict(
-            epoch=epoch,
-            learning_rate=lr,
-            scaling_factor=train_res["scaling_factor"],
-
-            loss_train=train_res['loss'],
-            prediction_loss_train=train_res['prediction_loss'],
-            landscape_loss_train=train_res['landscape_loss'],
-            acc_train=train_res['accuracy'],
-            image_train=train_res["image"],
-
-            loss_test=test_res['loss'],  #nll
-            prediction_loss_test=train_res['prediction_loss'],
-            landscape_loss_test=train_res['landscape_loss'],
-            acc_test=test_res['accuracy'],
-            image_test=test_res["image"],
-
-            epoch_duration=time_ep
-        ))
-        values = [epoch, lr, train_res['loss'], train_res['accuracy'], test_res['loss'],
-                  test_res['accuracy'], time_ep]
-        table = tabulate.tabulate([values], columns, tablefmt='simple', floatfmt='9.4f')
-        if epoch % 40 == 1 or epoch == start_epoch:
-            table = table.split('\n')
-            table = '\n'.join([table[1]] + table)
-        else:
-            table = table.split('\n')[2]
-        print(table)
+        # values = [epoch, lr, train_res['loss'], train_res['accuracy'], test_res['loss'],
+        #           test_res['accuracy'], time_ep]
+        # table = tabulate.tabulate([values], columns, tablefmt='simple', floatfmt='9.4f')
+        # if epoch % 40 == 1 or epoch == start_epoch:
+        #     table = table.split('\n')
+        #     table = '\n'.join([table[1]] + table)
+        # else:
+        #     table = table.split('\n')[2]
+        # print(table)
 
     if args.epochs % args.save_freq != 0:
         utils.save_checkpoint(
@@ -246,6 +300,7 @@ def main(args):
             model_state=model.state_dict(),
             optimizer_state=optimizer.state_dict()
         )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='DNN curve training')
@@ -322,6 +377,16 @@ if __name__ == "__main__":
                              'tries to attain the diversity image without improving the actual prediction accuracy')
     parser.add_argument('--plot_metrics', nargs='+', default=[],
                         help='Enforces plotting additional landscape metrics, even if they are not required for the landscape loss')
+    parser.add_argument('--multi_plot_metrics', nargs='+', default=[],
+                        help='Plot the given diversity metrics multi_plot_iterations times when testing, starting with'
+                             'the origin and then using the point which is worst explained by the previous points in the'
+                             ' following iterations.')
+    parser.add_argument('--multi_plot_iterations', type=int, default=5,
+                        help='How many plots to create for --multi_plot_metrics')
+
+    parser.set_defaults(test_only=False)
+    parser.add_argument('--test_only', action='store_true', dest='test_only',
+                        help='Only runs test phase')
 
     parser.set_defaults(use_wandb=True)
     parser.add_argument('--no_wandb', action='store_false', dest='use_wandb',
@@ -330,4 +395,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args = wandb_utils.init_wandb(args)
     main(args)
-
