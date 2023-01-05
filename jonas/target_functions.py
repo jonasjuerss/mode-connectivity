@@ -141,6 +141,23 @@ class CrossEntropy2D(PixelDifference2D):
         predictions_origin = torch.softmax(module(inputs, compared_coords), dim=-1)
         return torch.nn.functional.cross_entropy(predictions, predictions_origin, reduction='none')
 
+class PredictionDifference(PixelDifference2D):
+    def __init__(self):
+        super().__init__("PredictionDifference")
+
+    def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
+        """
+        :return: The cross entropy between the predicted probabilities at the origin and the predicted
+        probabilities at the given position
+        """
+        # Whereas log probabilities are expected for the input,
+        if compared_coords is None:
+            compared_coords = torch.zeros((1, corresponding_coords.shape[-1]), device=device)
+
+        predictions_origin = module(inputs, compared_coords)
+        return 1.0 - (torch.argmax(predictions_origin, dim=-1) == torch.argmax(predictions, dim=-1)).to(float)
+
 
 class Loss2D(PixelDifference2D):
 
@@ -152,7 +169,7 @@ class Loss2D(PixelDifference2D):
         return prediction_losses
 
 
-__all__: List[TargetFunction] = [Euclidean2D(), CrossEntropy2D(), Loss2D()]
+__all__: List[TargetFunction] = [Euclidean2D(), CrossEntropy2D(), Loss2D(), PredictionDifference()]
 
 
 def function_from_name(name: str, args: Namespace) -> TargetFunction:
