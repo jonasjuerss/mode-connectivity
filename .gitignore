@@ -68,3 +68,4 @@ target/
 .idea*
 
 wandb/
+results/
