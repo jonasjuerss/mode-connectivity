@@ -34,13 +34,13 @@ class MNISTNetCurve(nn.Module):
     def __init__(self, num_classes, fix_points):
         super(MNISTNetCurve, self).__init__()
         self.conv1 = curves.Conv2d(1, 32, kernel_size=3, fix_points = fix_points)
-        self.relu1 = nn.ReLU(True),
-        self.maxpool1 = nn.MaxPool2d(kernel_size=2),
-        self.conv2 = curves.Conv2d(32, 64, kernel_size=3, fix_points = fix_points),
-        self.relu2 = nn.ReLU(True),
-        self.maxpool2 = nn.MaxPool2d(kernel_size=2),
-        self.flatten1 = nn.Flatten(),
-        self.linear1 = curves.Linear(1600, num_classes, fix_points = fix_points),
+        self.relu1 = nn.ReLU(True)
+        self.maxpool1 = nn.MaxPool2d(kernel_size=2)
+        self.conv2 = curves.Conv2d(32, 64, kernel_size=3, fix_points = fix_points)
+        self.relu2 = nn.ReLU(True)
+        self.maxpool2 = nn.MaxPool2d(kernel_size=2)
+        self.flatten1 = nn.Flatten()
+        self.linear1 = curves.Linear(1600, num_classes, fix_points = fix_points)
 
     def forward(self, x, coeffs_t):
         x = self.conv1(x, coeffs_t)
