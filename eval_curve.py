@@ -17,12 +17,12 @@ def main(args):
     torch.backends.cudnn.benchmark = True
 
     loaders, num_classes = data.loaders(
-        args.dataset,
-        args.data_path,
-        args.batch_size,
-        args.num_workers,
-        args.transform,
-        args.use_test,
+        dataset = args.dataset,
+        path = args.data_path,
+        batch_size = args.batch_size,
+        num_workers = args.num_workers,
+        transform_name = args.transform,
+        use_test = args.use_test,
         shuffle_train=False
     )
 
