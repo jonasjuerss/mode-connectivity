@@ -62,7 +62,8 @@ def main(args):
             if args.init_linear:
                 print('Linear initialization.')
                 model.init_linear()
-    model.cuda()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = model.to(device)
 
     def learning_rate_schedule(base_lr, epoch, total_epochs):
         alpha = epoch / total_epochs

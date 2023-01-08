@@ -1,0 +1,46 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Train Network d1",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args" : ["--dir=results/d1", "--dataset=MNIST", "--data_path=data", "--model=MNISTNet", "--epochs=1", "--lr=0.001", "--wd=0", "--transform=NoTransform"]
+        },
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "train curve with args",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--dir=results/c1",
+                "--dataset=MNIST",
+                "--transform=NoTransform",
+                "--data_path=data",
+                "--model=MNISTNet",
+                "--curve=PolyChain",
+                "--num_bends=3",
+                "--init_start=results/n1/checkpoint-1.pt",
+                "--init_end=results/n2/checkpoint-1.pt",
+                "--fix_start",
+                "--fix_end",
+                "--epochs=2",
+                "--lr=0.015",
+                "--wd=5e-4"
+            ]
+        }
+    ]
+}

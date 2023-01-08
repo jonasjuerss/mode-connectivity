@@ -69,3 +69,6 @@ target/
 
 wandb/
 results/
+data/
+data/*
+wandb_utils.py
