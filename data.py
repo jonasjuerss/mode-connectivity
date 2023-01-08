@@ -69,15 +69,15 @@ def loaders(dataset, path, batch_size, num_workers, transform_name, scale=1.0, u
             # delattr(test_set, 'targets')
         else:
             print("Using train (45000) + validation (5000)")
-            train_set.train_data = train_set.train_data[:-5000]
+            train_set.data = train_set.data[:-5000]
             train_set.targets = train_set.targets[:-5000]
 
             test_set = ds(path, train=True, download=True, transform=transform.test)
             test_set.train = False
-            test_set.test_data = test_set.train_data[-5000:]
-            test_set.test_labels = test_set.targets[-5000:]
-            delattr(test_set, 'train_data')
-            delattr(test_set, 'targets')
+            test_set.data = test_set.data[-5000:]
+            test_set.targets = test_set.targets[-5000:]
+            #delattr(test_set, 'train_data')
+            #delattr(test_set, 'targets')
     if scale < 1.0:
         train_set = torch.utils.data.Subset(train_set, torch.randperm(len(train_set))[:int(round(len(train_set)*scale))])
         test_set = torch.utils.data.Subset(test_set, torch.randperm(len(test_set))[:int(round(len(test_set)*scale))])

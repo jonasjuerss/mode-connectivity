@@ -2,15 +2,6 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Train Network d1",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args" : ["--dir=results/d1", "--dataset=MNIST", "--data_path=data", "--model=MNISTNet", "--epochs=1", "--lr=0.001", "--wd=0", "--transform=NoTransform"]
-        },
-        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
@@ -18,6 +9,26 @@
             "console": "integratedTerminal",
             "justMyCode": true
         },
+        {
+            "name": "Train Network d1",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args" : [
+                "--dir=results/d1", 
+                "--dataset=MNIST", 
+                "--data_path=data", 
+                "--model=MNISTNet", 
+                "--epochs=1", 
+                "--lr=0.001", 
+                "--wd=0", 
+                "--transform=NoTransform",
+                "--no_wandb"
+            ]
+        },
+        
         {
             "name": "train curve with args",
             "type": "python",
@@ -39,8 +50,53 @@
                 "--fix_end",
                 "--epochs=2",
                 "--lr=0.015",
-                "--wd=5e-4"
+                "--wd=5e-4",
+                "--no_wandb"
             ]
-        }
+        },
+        {
+            "name": "cifar10 convfc curve",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--dir=results/cifar10-c1",
+                "--dataset=CIFAR10",
+                "--transform=ResNet",
+                "--data_path=data",
+                "--model=ConvFC",
+                "--curve=PolyChain",
+                "--num_bends=3",
+                "--init_start=results/cifar10-n1/checkpoint-x.pt",
+                "--init_end=results/cifar10-n2/checkpoint-x",
+                "--fix_start",
+                "--fix_end",
+                "--epochs=3",
+                "--lr=0.015",
+                "--wd=5e-4",
+                "--no_wandb"
+            ]
+        },
+        {
+            "name": "cifar10 convfc",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--dir=results/cifar10-n1",
+                "--dataset=CIFAR10",
+                "--transform=ResNet",
+                "--data_path=data",
+                "--model=ConvFC",
+                "--epochs=3",
+                "--lr=0.015",
+                "--wd=5e-4",
+                "--no_wandb"
+            ]
+        },
     ]
 }

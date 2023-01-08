@@ -34,6 +34,8 @@ def main(args):
         args.use_test
     )
 
+    if(type(num_classes) == torch.Tensor):
+        num_classes = num_classes.item()
     architecture = getattr(models, args.model)
 
     if args.curve is None:
