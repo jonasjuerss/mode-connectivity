@@ -45,7 +45,7 @@ class CurveModule(Module):
     def __init__(self, fix_points, parameter_names=()):
         super(CurveModule, self).__init__()
         self.fix_points = fix_points
-        self.num_bends = len(self.fix_points) #isn't num_bends = len(fix_points) - 2 (because of start and end)
+        self.num_bends = len(self.fix_points)
         self.parameter_names = parameter_names
         self.l2 = 0.0
 
