@@ -52,7 +52,7 @@ def main(args):
     te_acc = np.zeros(T)
     tr_err = np.zeros(T)
     te_err = np.zeros(T)
-    dl = np.zeros(T)
+    dl = np.zeros(T) #euclidean distance from the previous point in the weight space (includes biases)
 
     previous_weights = None
 
