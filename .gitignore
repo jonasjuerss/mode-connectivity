@@ -72,3 +72,4 @@ results/
 data/
 data/*
 wandb_utils.py
+experiments.bat

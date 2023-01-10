@@ -54,22 +54,22 @@
             ]
         },
         {
-            "name": "eval_curve cifar10 convfc",
+            "name": "eval_curve_extensive cifar10 vgg16",
             "type": "python",
             "request": "launch",
-            "program": "eval_curve.py",
+            "program": "eval_curve_extensive.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
                 "--dir=results/eval",
                  "--dataset=CIFAR10",
                  "--data_path=data",
-                 "--transform=ResNet",
-                 "--model=ConvFC",
+                 "--transform=VGG",
+                 "--model=VGG16",
                  "--wd=5e-4",
                  "--curve=PolyChain",
                  "--num_bends=3",
-                 "--ckpt=results/cifar10-convfc-c1/checkpoint-3.pt"
+                 "--ckpt=results/cifar10-vgg16-c-n1-n2/checkpoint-100.pt"
             ]
         },
     ]
