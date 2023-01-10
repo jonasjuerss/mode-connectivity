@@ -1,0 +1,2 @@
+python train.py --dir=results/cifar10-vgg16-n5 --dataset=CIFAR10 --data_path=data --model=VGG16 --epochs=200 --lr=0.05 --wd=5e-4 --transform=VGG --no_wandb --wandb_log
+python train.py --dir=results/cifar10-vgg16-n6 --dataset=CIFAR10 --data_path=data --model=VGG16 --epochs=200 --lr=0.05 --wd=5e-4 --transform=VGG --no_wandb --wandb_log
