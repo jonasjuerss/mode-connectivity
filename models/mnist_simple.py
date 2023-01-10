@@ -18,8 +18,7 @@ class MNISTSimpleBase(nn.Sequential):
             nn.Flatten(),
             # TODO If necessary, get rid of this part as non-deterministic behaviour might make my landscape harder to achieve
             # nn.Dropout(0.5),
-            nn.Linear(1600, num_classes),
-            nn.Softmax()
+            nn.Linear(1600, num_classes)
         )
 
         # Initialize weights
