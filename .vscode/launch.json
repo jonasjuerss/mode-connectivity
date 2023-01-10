@@ -72,5 +72,6 @@
                  "--ckpt=results/cifar10-vgg16-c-n1-n2/checkpoint-100.pt"
             ]
         },
+        
     ]
 }
