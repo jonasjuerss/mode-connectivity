@@ -15,6 +15,10 @@ from wandb_utils import log
 
 
 def main(args):
+    if(args.fix_end_points is not None):
+        args.fix_end_points = list(map(bool, args.fix_end_points))
+    if(args.fix_end_points is None and args.system_end_points is not None):
+        args.fix_end_points = [True] * len(args.system_end_points)
     os.makedirs(args.dir, exist_ok=True)
     with open(os.path.join(args.dir, 'command.sh'), 'w') as f:
         f.write(' '.join(sys.argv))
@@ -40,6 +44,28 @@ def main(args):
 
     if args.curve is None:
         model = architecture.base(num_classes=num_classes, **architecture.kwargs)
+    elif args.curve[-5:] == "System":
+        curve = getattr(curves, args.curve[:-5])
+        model = curves.CurveSystemNet(
+            num_classes,
+            curve,
+            args.num_bends,
+            args.fix_end_points,
+            architecture_kwargs=architecture.kwargs
+        )
+        base_model = None
+        if args.resume is None:
+            for k, path in enumerate(args.system_end_points):
+                if path is not None:
+                    if base_model is None:
+                        base_model = architecture.base(num_classes=num_classes, **architecture.kwargs)
+                    checkpoint = torch.load(path)
+                    print('Loading %s as point #%d' % (path, k+1))
+                    base_model.load_state_dict(checkpoint['model_state'])
+                    model.import_base_parameters(base_model, k+1)
+            if args.init_linear:
+                print('Linear initialization.')
+                model.init_linear()
     else:
         curve = getattr(curves, args.curve)
         model = curves.CurveNet(
@@ -211,6 +237,9 @@ if __name__ == "__main__":
                         help='Turns off logging to wandb')
     parser.add_argument('--wandb_log', action='store_true',
                         help='Turns on logging to wandb')
+    parser.add_argument('--system_end_points', nargs="+", help='path to the endpoints of a curve system')
+    parser.add_argument('--fix_end_points', nargs="+", type=int, help='boolean values indicating which endpoints can be trained with the system and which are fixed (use 1 or 0)')
+    
 
     args = parser.parse_args()
     args = wandb_utils.init_wandb(args)

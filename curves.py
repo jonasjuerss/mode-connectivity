@@ -379,7 +379,7 @@ class CurveSystemNet(Module):
         self.num_classes = num_classes
         self.num_bends = num_bends
         
-        self.fix_points = fix_end_points + [False] * ((num_bends-2) * n_end_points + 1) #curve connecting
+        self.fix_points = [False] + fix_end_points + [False] * ((num_bends-2) * n_end_points) #curve connecting
         
         self.curve = curve
         self.architecture = architecture
