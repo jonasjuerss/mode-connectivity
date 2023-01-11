@@ -193,8 +193,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of epochs to train (default: 200)')
-    parser.add_argument('--save_freq', type=int, default=50, metavar='N',
-                        help='save frequency (default: 50)')
+    parser.add_argument('--save_freq', type=int, default=20, metavar='N',
+                        help='save frequency (default: 20)')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='initial learning rate (default: 0.01)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
