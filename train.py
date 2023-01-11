@@ -206,7 +206,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
 
-    parser.set_defaults(use_wandb=True)
+    parser.set_defaults(use_wandb=False)
     parser.add_argument('--no_wandb', action='store_false', dest='use_wandb',
                         help='Turns off logging to wandb')
     parser.add_argument('--wandb_log', action='store_true',
