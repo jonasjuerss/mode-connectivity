@@ -27,7 +27,8 @@ class TargetFunction(abc.ABC):
 
     @abc.abstractmethod
     def evaluate(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                 corresponding_coords: Tensor, module: LandscapeModule) -> Tuple[Tensor, Tensor]:
+                 corresponding_coords: Tensor, module: LandscapeModule, clipoff: Tensor = None)\
+            -> Tuple[Tensor, Tensor]:
         """
         For predictions(_origin) and labels, it is expected that the first batch_size entries
         correspond to the first coordinate in corresponding_coords, the next to the second and so on.
@@ -38,6 +39,10 @@ class TargetFunction(abc.ABC):
         :param labels: [batch_size * num_coords]
         :param prediction_losses: [batch_size * num_coords]
         :param corresponding_coords: [num_coords, num_dimensions]
+        :param clipoff: An optional clipoff that the concrete function implements if it is not bound in one direction
+        (e.g. crossentropy can get arbitrarily large). None by default which means that no clipoff will be applied. This
+        is useful when using the target function for plots and not actual loss calculations.
+        (Scalar GPU tensor for efficiency, So we don't have to load it every time)
         :return: (diversities, loss) where diversities is a [num_coords] tensor with the diversity for each coordinate
         and loss is the overall loss
         """
@@ -53,7 +58,9 @@ class PixelDifference2D(TargetFunction, abc.ABC):
         # so target will have values like [v(0, 0), ..., v(0, n), v(1,0), ... , v(1, n), ...] where v(x1, x2) = -1 for
         # black pixels and 0 otherwise
         self.target = torch.Tensor(imageio.imread(f'res/icons/{args.target_image}.png') // 255)
-        assert len(self.target.shape) == 2
+        assert len(self.target.shape) <= 3
+        if len(self.target.shape) == 3:
+            self.target = torch.mean(self.target, dim=2)
         self.target_shape = self.target.shape
         if args.equal_weight_colors:
             white_percentage = self.target.sum() / (self.target_shape[0] * self.target_shape[1])
@@ -72,7 +79,8 @@ class PixelDifference2D(TargetFunction, abc.ABC):
 
     @abc.abstractmethod
     def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None,
+                     clipoff: Tensor = None):
         """
         The first batch_size entries correspond to the first coordinate in corresponding_coords,
         the next to the second and so on
@@ -83,7 +91,7 @@ class PixelDifference2D(TargetFunction, abc.ABC):
         pass
 
     def evaluate(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                 corresponding_coords: Tensor, module: LandscapeModule) -> Tuple[Tensor, Tensor]:
+                 corresponding_coords: Tensor, module: LandscapeModule, clipoff: Tensor = None) -> Tuple[Tensor, Tensor]:
         """
         White pixels mean high diversity. Therefore, (0, 0) == white would be unfeasible
         """
@@ -98,7 +106,8 @@ class PixelDifference2D(TargetFunction, abc.ABC):
         corresponding_targets = self.target[
             corresponding_coords[:, 0] * self.target_shape[1] + corresponding_coords[:, 1]]
 
-        diversities = self.measure_loss(inputs, predictions, labels, prediction_losses, corresponding_coords, module)
+        diversities = self.measure_loss(inputs, predictions, labels, prediction_losses, corresponding_coords, module,
+                                        clipoff=clipoff)
         # grouped mean for each coordinate. Only necessary because we want to return the diversity
         diversities = torch.mean(diversities.reshape(corresponding_coords.shape[0], -1), dim=1)
         return diversities, torch.mean(diversities * corresponding_targets)
@@ -109,7 +118,8 @@ class Euclidean2D(PixelDifference2D):
         super().__init__("Euclidean2D")
 
     def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None,
+                     clipoff: Tensor = None):
         """
         :return: The euclidean distance between the predicted probabilities at the origin and the predicted
         probabilities at the given position
@@ -129,7 +139,8 @@ class CrossEntropy2D(PixelDifference2D):
         super().__init__("CrossEntropy2D")
 
     def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None,
+                     clipoff: Tensor = None):
         """
         :return: The cross entropy between the predicted probabilities at the origin and the predicted
         probabilities at the given position
@@ -139,14 +150,18 @@ class CrossEntropy2D(PixelDifference2D):
             compared_coords = torch.zeros((1, corresponding_coords.shape[-1]), device=device)
 
         predictions_origin = torch.softmax(module(inputs, compared_coords), dim=-1)
-        return torch.nn.functional.cross_entropy(predictions, predictions_origin, reduction='none')
+        res = torch.nn.functional.cross_entropy(predictions, predictions_origin, reduction='none')
+        if clipoff is None:
+            return res
+        return torch.minimum(res, clipoff)
 
 class ClassificationDifference(PixelDifference2D):
     def __init__(self):
         super().__init__("ClassificationDifference")
 
     def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None,
+                     clipoff: Tensor = None):
         """
         :return: The cross entropy between the predicted probabilities at the origin and the predicted
         probabilities at the given position
@@ -163,7 +178,8 @@ class ClassificationErrorDifference(PixelDifference2D):
         super().__init__("ClassificationErrorDifference")
 
     def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None,
+                     clipoff: Tensor = None):
         """
         :return: The cross entropy between the predicted probabilities at the origin and the predicted
         probabilities at the given position
@@ -188,8 +204,11 @@ class Loss2D(PixelDifference2D):
         super().__init__("Loss2D")
 
     def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
-                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None):
-        return prediction_losses
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None,
+                     clipoff: Tensor = None):
+        if clipoff is None:
+            return prediction_losses
+        return torch.minimum(prediction_losses, clipoff)
 
 
 __all__: List[TargetFunction] = [Euclidean2D(), CrossEntropy2D(), Loss2D(), ClassificationDifference(),

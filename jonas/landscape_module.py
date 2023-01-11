@@ -20,6 +20,7 @@ class LandscapeModule(Module):
         super().__init__()
         self.orthonormal_base = orthonormal_base
         self.scaling_factor = torch.tensor(1.0)
+        self.num_classes = num_classes
         if learn_scaling_factor:
             self.scaling_factor = Parameter(self.scaling_factor)
 
