@@ -3,6 +3,7 @@ import os
 import sys
 import time
 from contextlib import nullcontext
+from datetime import datetime
 from typing import List, cast
 
 import tabulate
@@ -23,12 +24,14 @@ from wandb_utils import log
 
 def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criterion: TargetFunction,
                plot_functions: List[PixelDifference2D], multi_plot_functions: List[PixelDifference2D],
-               multi_plot_iterations, accuracy_weight, regularizer=None, lr_schedule=None, coordinates=None, train=True):
+               multi_plot_iterations, accuracy_weight, clipoff, regularizer=None, lr_schedule=None, coordinates=None,
+               train=True):
     loss_sum = 0.0
     landscape_loss_sum = 0.0
     prediction_loss_sum = 0.0
     accuracy = 0.0
-    image_data = torch.zeros((coordinates.shape[0], 5 + len(plot_functions)))
+    image_data = torch.zeros((coordinates.shape[0], 5 + model.num_classes + len(plot_functions)))
+    all_classes = torch.arange(model.num_classes)[None, :].cuda()
     if multi_plot_functions:
         multi_image_data = torch.zeros((multi_plot_iterations * coordinates.shape[0], len(multi_plot_functions)))
 
@@ -59,11 +62,18 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
                     prediction_loss += regularizer(model)
                 landscape_metric, landscape_loss = landscape_criterion.evaluate(input, output, target,
                                                                                 prediction_loss.reshape(1, 1), coords,
-                                                                                model)
+                                                                                model, clipoff)
 
                 loss = accuracy_weight * prediction_loss + (1 - accuracy_weight) * landscape_loss
-                assert not torch.isnan(loss).item()
+                if torch.isnan(loss).item():
+                    print(output)
+                    print("coords: ", coords)
+                    print("accuracy_weight:", accuracy_weight)
+                    print("prediction_loss:", prediction_loss)
+                    print("landscape_loss:", landscape_loss)
+                    raise ValueError("NaN loss. Something went wrong with the training.")
 
+                # [batch_size, 1]
                 pred = output.data.argmax(1, keepdim=True)
                 acc = 100 * pred.eq(target.data.view_as(pred)).to(float).mean().item()
 
@@ -72,6 +82,7 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
                 image_data[i, 2] += acc
                 image_data[i, 3] += prediction_loss.item()
                 image_data[i, 4] += loss.item()
+                image_data[i, 5:5 + model.num_classes] += (100 * torch.sum(pred == all_classes, dim=0) / pred.shape[0]).cpu()
 
                 if plot_functions or multi_plot_functions: # Only enter context if actually necessary
                     with torch.no_grad() if train else nullcontext():
@@ -79,9 +90,12 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
                             # Here, we know that we only feed information over a single coordinate so we can just
                             # take the overall mean as opposed to the per-coordinate mean calculated in the evaluate()
                             # method
-                            image_data[i, 5 + j] += torch.mean(fun.measure_loss(input, output, target,
-                                                                                prediction_loss.reshape(1, 1), coords,
-                                                                                model)).item()
+                            image_data[i, 5 + model.num_classes + j] += torch.mean(fun.measure_loss(input, output,
+                                                                                                    target,
+                                                                                                    prediction_loss\
+                                                                                                    .reshape(1, 1),
+                                                                                                    coords,
+                                                                                                    model)).item()
                         for j, fun in enumerate(multi_plot_functions):
                             multi_image_data[i, j] += torch.mean(fun.measure_loss(input, output, target,
                                                                                  prediction_loss.reshape(1, 1),
@@ -134,7 +148,7 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
     image_data /= num_iters
 
     table = wandb.Table(columns=["x1", "x2", landscape_criterion.name, "landscape_loss", "accuracy", "prediction_loss",
-                                 "loss"] + [f.name for f in plot_functions])
+                                 "loss"] + [f"Class_{i}" for i in range(10)] + [f.name for f in plot_functions])
     for c in range(coordinates.shape[0]):
         table.add_data(coordinates[c, 0], coordinates[c, 1], *image_data[c])
 
@@ -153,7 +167,8 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
         multi_image_data /= num_iters
         for c in range(coordinates.shape[0]):
             for i_plot in range(multi_plot_iterations):
-                multi_table.add_data(coordinates[c, 0], coordinates[c, 1], i_plot, *multi_image_data[i_plot * coordinates.shape[0] + c])
+                multi_table.add_data(coordinates[c, 0], coordinates[c, 1], i_plot,
+                                     *multi_image_data[i_plot * coordinates.shape[0] + c])
         res["multi_plots"] = multi_table
     return res
 
@@ -233,6 +248,7 @@ def main(args):
 
     has_bn = utils.check_bn(model)
     test_res = {'loss': None, 'accuracy': None, 'nll': None}
+    clipoff = torch.tensor(args.loss_clipoff).cuda()
     for epoch in range(start_epoch, (start_epoch if args.test_only else args.epochs) + 1):
         time_ep = time.time()
 
@@ -246,7 +262,7 @@ def main(args):
 
         if not args.test_only:
             train_res = train_test(loaders['train'], model, optimizer, target_function, plot_functions, [],
-                                   args.multi_plot_iterations, args.accuracy_weight, regularizer,
+                                   args.multi_plot_iterations, args.accuracy_weight, clipoff, regularizer,
                                    coordinates=target_function.requested_coordinates)
             log_dict.update(dict(
                 scaling_factor=train_res["scaling_factor"],
@@ -258,7 +274,8 @@ def main(args):
                 image_train=train_res["image"]))
         if not has_bn:
             test_res = train_test(loaders['test'], model, optimizer, target_function, plot_functions,
-                                  multi_plot_functions, args.multi_plot_iterations, args.accuracy_weight, regularizer,
+                                  multi_plot_functions if epoch % args.multi_plot_freq == 1 else [],
+                                  args.multi_plot_iterations, args.accuracy_weight, clipoff, regularizer,
                                   coordinates=target_function.requested_coordinates, train=False)
             log_dict.update(dict(
                 scaling_factor=test_res["scaling_factor"],
@@ -269,7 +286,7 @@ def main(args):
                 acc_test=test_res['accuracy'],
                 image_test=test_res["image"],
             ))
-            if multi_plot_functions:
+            if "multi_plots" in test_res:
                 log_dict["multi_plots"] = test_res["multi_plots"]
 
         if epoch % args.save_freq == 0:
@@ -304,8 +321,9 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='DNN curve training')
-    parser.add_argument('--dir', type=str, default='/tmp/curve/', metavar='DIR',
-                        help='training directory (default: /tmp/curve/)')
+    parser.add_argument('--dir', type=str, default=os.path.join("networks", "auto",
+                                                                datetime.now().strftime("%d-%m-%Y_%H-%M-%S")),
+                        metavar='DIR', help='training directory (default: networks/auto/<current date ad time>)')
 
     parser.add_argument('--dataset', type=str, default='CIFAR10', metavar='DATASET',
                         help='dataset name (default: CIFAR10)')
@@ -383,6 +401,10 @@ if __name__ == "__main__":
                              ' following iterations.')
     parser.add_argument('--multi_plot_iterations', type=int, default=5,
                         help='How many plots to create for --multi_plot_metrics')
+    parser.add_argument('--multi_plot_freq', type=int, default=5,
+                        help='Frequency with which to log multi_plots')
+    parser.add_argument('--loss_clipoff', type=float, default=2.5,
+                        help='The clipoff for loss. Note that Crossentropy would have no upper bound.')
 
     parser.set_defaults(test_only=False)
     parser.add_argument('--test_only', action='store_true', dest='test_only',
@@ -393,5 +415,6 @@ if __name__ == "__main__":
                         help='Turns off logging to wandb')
 
     args = parser.parse_args()
+    args.wandb_log = False  # To fix the issue Miran introduced by using his own argument name
     args = wandb_utils.init_wandb(args)
     main(args)
