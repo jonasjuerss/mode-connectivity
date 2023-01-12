@@ -17,6 +17,7 @@ class MNISTNetBase(nn.Module):
             nn.ReLU(True),
             nn.MaxPool2d(kernel_size=2),
             nn.Flatten(),
+            nn.Dropout(0.5),
             nn.Linear(1600, num_classes),
         )
 
@@ -40,6 +41,7 @@ class MNISTNetCurve(nn.Module):
         self.relu2 = nn.ReLU(True)
         self.maxpool2 = nn.MaxPool2d(kernel_size=2)
         self.flatten1 = nn.Flatten()
+        self.dropout = nn.Dropout(0.5)
         self.linear1 = curves.Linear(1600, num_classes, fix_points = fix_points)
 
     def forward(self, x, coeffs_t):
@@ -50,6 +52,7 @@ class MNISTNetCurve(nn.Module):
         x = self.relu2(x)
         x = self.maxpool2(x)
         x = self.flatten1(x)
+        x = self.dropout(x)
         x = self.linear1(x, coeffs_t)
         return x
 
