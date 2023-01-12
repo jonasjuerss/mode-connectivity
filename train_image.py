@@ -242,6 +242,7 @@ def main(args):
     utils.save_checkpoint(
         args.dir,
         start_epoch - 1,
+        use_wandb=args.wandb_checkpoints,
         model_state=model.state_dict(),
         optimizer_state=optimizer.state_dict()
     )
@@ -293,6 +294,7 @@ def main(args):
             utils.save_checkpoint(
                 args.dir,
                 epoch,
+                use_wandb=args.wandb_checkpoints,
                 model_state=model.state_dict(),
                 optimizer_state=optimizer.state_dict()
             )
@@ -314,6 +316,7 @@ def main(args):
         utils.save_checkpoint(
             args.dir,
             args.epochs,
+            use_wandb=args.wandb_checkpoints,
             model_state=model.state_dict(),
             optimizer_state=optimizer.state_dict()
         )
@@ -413,8 +416,18 @@ if __name__ == "__main__":
     parser.set_defaults(use_wandb=True)
     parser.add_argument('--no_wandb', action='store_false', dest='use_wandb',
                         help='Turns off logging to wandb')
+    parser.set_defaults(wandb_checkpoints=False)
+    parser.add_argument('--wandb_checkpoints', action='store_true', dest='wandb_checkpoints',
+                        help='Stores checkpoints to weights and biases.')
+    parser.add_argument('--continue_wandb', type=str, default=None,
+                        help='If this is provided, all other arguments are ignored and a run is loaded from weights and'
+                             'biases.')
 
     args = parser.parse_args()
     args.wandb_log = False  # To fix the issue Miran introduced by using his own argument name
+
+    if args.continue_wandb is not None:
+        raise NotImplementedError()
+
     args = wandb_utils.init_wandb(args)
     main(args)
