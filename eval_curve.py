@@ -52,7 +52,7 @@ def main(args):
     te_acc = np.zeros(T)
     tr_err = np.zeros(T)
     te_err = np.zeros(T)
-    dl = np.zeros(T) #euclidean distance from the previous point in the weight space (includes biases)
+    dl = np.zeros(T) #euclidean distance from the previous point in the weight space (why not biases?)
 
     previous_weights = None
 
@@ -65,10 +65,9 @@ def main(args):
         if previous_weights is not None:
             dl[i] = np.sqrt(np.sum(np.square(weights - previous_weights)))
         previous_weights = weights.copy()
-
         utils.update_bn(loaders['train'], model, t=t)
-        tr_res = utils.test(loaders['train'], model, criterion, regularizer, t=t)
-        te_res = utils.test(loaders['test'], model, criterion, regularizer, t=t)
+        tr_res = utils.test_extensive(loaders['train'], model, criterion, regularizer, t=t)
+        te_res = utils.test_extensive(loaders['test'], model, criterion, regularizer, t=t)
         tr_loss[i] = tr_res['loss']
         tr_nll[i] = tr_res['nll']
         tr_acc[i] = tr_res['accuracy']

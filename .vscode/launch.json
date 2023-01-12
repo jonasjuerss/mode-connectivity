@@ -72,6 +72,26 @@
                  "--ckpt=results/cifar10-vgg16-c-n1-n2/checkpoint-100.pt"
             ]
         },
+        {
+            "name": "eval_curve_extensive",
+            "type": "python",
+            "request": "launch",
+            "program": "eval_curve_extensive.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--dir=results/curves/bezier-n5-n6/eval", 
+                "--dataset=CIFAR10", 
+                "--data_path=data", 
+                "--model=VGG16", 
+                "--wd=5e-4", 
+                "--transform=VGG", 
+                "--curve=Bezier", 
+                "--num_bends=3", 
+                "--ckpt=results/curves/bezier-n5-n6/checkpoint-140.pt",
+                "--use_test"
+            ]
+        },
         
     ]
 }

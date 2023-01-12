@@ -105,8 +105,17 @@ class Linear(CurveModule):
 
     def __init__(self, in_features, out_features, fix_points, bias=True):
         super(Linear, self).__init__(fix_points, ('weight', 'bias'))
+        
+        if(type(in_features) == torch.Tensor):
+            in_features = in_features.item()
+        
+        if(type(out_features) == torch.Tensor):
+            out_features = out_features.item()
         self.in_features = in_features
         self.out_features = out_features
+
+
+
 
         self.l2 = 0.0
         for i, fixed in enumerate(self.fix_points):

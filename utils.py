@@ -128,10 +128,11 @@ def test_extensive(test_loader, model, criterion, regularizer=None, t_refs = [0,
     added_trues_to_all = 0.0
 
     model.eval()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     for input, target in test_loader:
-        input = input.cuda(non_blocking =True)
-        target = target.cuda(non_blocking =True)
+        input = input.to(device, non_blocking =True)
+        target = target.to(device, non_blocking =True)
 
         output = model(input, **kwargs)
         ref_outputs = [model(input, t_ref) for t_ref in t_refs]
@@ -166,8 +167,8 @@ def test_extensive(test_loader, model, criterion, regularizer=None, t_refs = [0,
         'nll': nll_sum / N,
         'loss': loss_sum / N,
         'accuracy': correct * 100.0 / N,
-        "disagreement" : disagreements / N,
-        "new_true" : added_trues / N,
+        "disagreement_rates" : disagreements / N,
+        "new_trues" : added_trues / N,
         "new_true_total" : added_trues_to_all / N
     }
 

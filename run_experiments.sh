@@ -1,2 +1,1 @@
-python train.py --dir=results/cifar10-vgg16-n5 --dataset=CIFAR10 --data_path=data --model=VGG16 --epochs=200 --lr=0.05 --wd=5e-4 --transform=VGG --no_wandb --wandb_log
-python train.py --dir=results/cifar10-vgg16-n6 --dataset=CIFAR10 --data_path=data --model=VGG16 --epochs=200 --lr=0.05 --wd=5e-4 --transform=VGG --no_wandb --wandb_log
+python3 evaluate_curve_extensive.py --dir=results/c1/eval --dataset=MNIST --data_path=data --model=MNISTNet --wd=5e-4 --transform=NoTransform --curve=PolyChain --num_bends=3 --ckpt=results/c1/checkpoint-0.pt
