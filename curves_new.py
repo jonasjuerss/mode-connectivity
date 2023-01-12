@@ -6,40 +6,29 @@ from torch.nn import Module, Parameter
 from torch.nn.modules.utils import _pair
 from scipy.special import binom
 
+#reimplementation of the curve module based on the provided code
+#code segments copied without modifications for improvement are indicated by comments
 
-class Bezier(Module):
+class Bezier():
     def __init__(self, num_bends):
-        super(Bezier, self).__init__()
-        self.register_buffer(
-            'binom',
-            torch.Tensor(binom(num_bends - 1, np.arange(num_bends), dtype=np.float32))
-        )
-        self.register_buffer('range', torch.arange(0, float(num_bends)))
-        self.register_buffer('rev_range', torch.arange(float(num_bends - 1), -1, -1))
+        self.num_bends = num_bends
 
-    def forward(self, t):
-        return self.binom * \
-               torch.pow(t, self.range) * \
-               torch.pow((1.0 - t), self.rev_range)
+    def get_coeffs(self, t):
+        return torch.tensor(binom(self.num_bends - 1, np.arange(self.num_bends), dtype=np.float32)) * \
+               torch.pow(t, torch.arange(0, float(self.num_bends))) * \
+               torch.pow((1.0 - t), torch.arange(float(self.num_bends - 1), -1, -1))
 
 
 class PolyChain(Module):
     def __init__(self, num_bends):
-        super(PolyChain, self).__init__()
         self.num_bends = num_bends
-        self.register_buffer('range', torch.arange(0, float(num_bends)))
 
-    def forward(self, t):
+    def get_coeffs(self, t):
         t_n = t * (self.num_bends - 1)
-        return torch.max(self.range.new([0.0]), 1.0 - torch.abs(t_n - self.range))
-        #für t in (0,1) 
-        #num_bends = 3 -> range = [0,1,2]; tn = t * 2
+        return torch.max(torch.tensor(0.0), 1.0 - torch.abs(t_n - torch.arange(0, float(self.num_bends))))
+        
 
-
-        #num_bends = 1 -> return ist immer torch([1.0])
-        #sonst torch([1-t, t])
-
-class CurveSystem(Module):
+class CurveSystem():
     """ This class is used to map a value in [0,1] to the corresponding point in the CurveSystem where the point 
     is given as the coefficients for the networks at each bend/endpoint (e.g. Point t=0.3 is 0.5*Network1 + 0.3 * Network2))
 
@@ -52,12 +41,10 @@ class CurveSystem(Module):
             num_end_points : number of endpoints in the system
             curve : class of the curves used (e.g. PolyChain)
         """
-        super(CurveSystem, self).__init__()
         self.num_bends = num_bends
         self.num_end_points = num_end_points
         self.curve = curve(num_bends)
-        self.num_coefficients =  num_end_points + ((num_bends-2) * num_end_points + 1) 
-        self.register_buffer('range', torch.arange(0, float(self.num_coefficients))) #idk why we need this but they do it like this as well
+        self.num_coefficients =  1 + num_end_points + (num_bends-2) * num_end_points 
 
     def forward(self, t):
         t = t * self.num_end_points
@@ -65,7 +52,7 @@ class CurveSystem(Module):
         t = t % 1 #indicates the t on this curve
         local_curve_coeff = self.curve(t)
         t_n = t * (self.num_bends - 1)
-        result = torch.zeros_like(self.range)
+        result = torch.zeros(self.num_coefficients)
         result[0] = local_curve_coeff[0] #set M coeff
         result[end_point + 1] = local_curve_coeff[-1] #set endpoint coeff
         bend_indices_start = self.num_end_points + 1 + (end_point * (self.num_bends - 2))
@@ -76,6 +63,7 @@ class CurveSystem(Module):
 
 
 
+#copied CurveModule class and only marginally improved compute_weights_t method
 class CurveModule(Module):
 
     def __init__(self, fix_points, parameter_names=()):
@@ -90,6 +78,8 @@ class CurveModule(Module):
         self.l2 = 0.0
         for i, parameter_name in enumerate(self.parameter_names):
             for j, coeff in enumerate(coeffs_t):
+                if(coeff.item() == 0):
+                    continue
                 parameter = getattr(self, '%s_%d' % (parameter_name, j))
                 if parameter is not None:
                     if w_t[i] is None:
@@ -112,25 +102,16 @@ class Linear(CurveModule):
         for i, fixed in enumerate(self.fix_points):
             self.register_parameter(
                 'weight_%d' % i,
-                Parameter(torch.Tensor(out_features, in_features), requires_grad=not fixed)
+                Parameter((torch.rand((out_features, in_features),requires_grad=not fixed) - 0.5)* 2 / math.sqrt(self.in_features), requires_grad=not fixed)
             )
         for i, fixed in enumerate(self.fix_points):
             if bias:
                 self.register_parameter(
                     'bias_%d' % i,
-                    Parameter(torch.Tensor(out_features), requires_grad=not fixed)
+                    Parameter((torch.rand((out_features),requires_grad=not fixed) - 0.5)* 2 / math.sqrt(self.in_features), requires_grad=not fixed)
                 )
             else:
                 self.register_parameter('bias_%d' % i, None)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        stdv = 1. / math.sqrt(self.in_features)
-        for i in range(self.num_bends):
-            getattr(self, 'weight_%d' % i).data.uniform_(-stdv, stdv)
-            bias = getattr(self, 'bias_%d' % i)
-            if bias is not None:
-                bias.data.uniform_(-stdv, stdv)
 
     def forward(self, input, coeffs_t):
         weight_t, bias_t = self.compute_weights_t(coeffs_t)
@@ -142,10 +123,14 @@ class Conv2d(CurveModule):
     def __init__(self, in_channels, out_channels, kernel_size, fix_points, stride=1,
                  padding=0, dilation=1, groups=1, bias=True):
         super(Conv2d, self).__init__(fix_points, ('weight', 'bias'))
-        if in_channels % groups != 0:
-            raise ValueError('in_channels must be divisible by groups')
-        if out_channels % groups != 0:
-            raise ValueError('out_channels must be divisible by groups')
+        if (in_channels % groups) != 0 or (out_channels % groups != 0):
+            raise ValueError('both in_channels and out_channels must be divisible by groups')
+
+        n = self.in_channels
+        for k in self.kernel_size:
+            n *= k
+        stdv = 1. / math.sqrt(n)
+
         kernel_size = _pair(kernel_size)
         stride = _pair(stride)
         padding = _pair(padding)
@@ -159,40 +144,20 @@ class Conv2d(CurveModule):
         self.groups = groups
 
         for i, fixed in enumerate(self.fix_points):
-            self.register_parameter(
-                'weight_%d' % i,
-                Parameter(
-                    torch.Tensor(out_channels, in_channels // groups, *kernel_size),
-                    requires_grad=not fixed
-                )
-            )
+            self.register_parameter('weight_%d' % i, Parameter((torch.rand((out_channels, in_channels // groups, *kernel_size))- 0.5)* 2 * stdv, requires_grad=not fixed))
         for i, fixed in enumerate(self.fix_points):
             if bias:
-                self.register_parameter(
-                    'bias_%d' % i,
-                    Parameter(torch.Tensor(out_channels), requires_grad=not fixed)
-                )
+                self.register_parameter('bias_%d' % i, Parameter((torch.rand((out_channels)) - 0.5)*2*stdv, requires_grad=not fixed))
             else:
                 self.register_parameter('bias_%d' % i, None)
-        self.reset_parameters()
 
-    def reset_parameters(self):
-        n = self.in_channels
-        for k in self.kernel_size:
-            n *= k
-        stdv = 1. / math.sqrt(n)
-        for i in range(self.num_bends):
-            getattr(self, 'weight_%d' % i).data.uniform_(-stdv, stdv)
-            bias = getattr(self, 'bias_%d' % i)
-            if bias is not None:
-                bias.data.uniform_(-stdv, stdv)
-
+ 
     def forward(self, input, coeffs_t):
         weight_t, bias_t = self.compute_weights_t(coeffs_t)
         return F.conv2d(input, weight_t, bias_t, self.stride,
                         self.padding, self.dilation, self.groups)
 
-
+#We copy the _BatchNorm and BatchNorm2D classes from the original implementation
 class _BatchNorm(CurveModule):
     _version = 2
 
@@ -338,7 +303,7 @@ class CurveNet(Module):
                 weights[j].data.copy_(alpha * weights[-1].data + (1.0 - alpha) * weights[0].data)
 
     def weights(self, t):
-        coeffs_t = self.coeff_layer(t)
+        coeffs_t = self.coeff_layer.get_coeffs(t)
         weights = []
         for module in self.curve_modules:
             weights.extend([w for w in module.compute_weights_t(coeffs_t) if w is not None])
@@ -350,7 +315,7 @@ class CurveNet(Module):
     def forward(self, input, t=None):
         if t is None:
             t = input.data.new(1).uniform_()
-        coeffs_t = self.coeff_layer(t)
+        coeffs_t = self.coeff_layer.get_coeffs(t)
         output = self.net(input, coeffs_t)
         self._compute_l2()
         return output
@@ -417,7 +382,7 @@ class CurveSystemNet(Module):
                 weights[j].data.copy_(alpha * weights[-1].data + (1.0 - alpha) * weights[0].data)
 
     def weights(self, t):
-        coeffs_t = self.coeff_layer(t)
+        coeffs_t = self.coeff_layer.get_coeffs(t)
         weights = []
         for module in self.curve_modules:
             weights.extend([w for w in module.compute_weights_t(coeffs_t) if w is not None])
@@ -429,7 +394,7 @@ class CurveSystemNet(Module):
     def forward(self, input, t=None):
         if t is None:
             t = input.data.new(1).uniform_()
-        coeffs_t = self.coeff_layer(t)
+        coeffs_t = self.coeff_layer.get_coeffs(t)
         output = self.net(input, coeffs_t)
         self._compute_l2()
         return output
@@ -439,3 +404,12 @@ def l2_regularizer(weight_decay):
     return lambda model: 0.5 * weight_decay * model.l2
 
 
+if(__name__ == "__main__"):
+    cs = CurveSystem(3,3,PolyChain)
+    print(cs(1/3))
+    print(cs(1/12))
+    print(cs(1/12 + 1/24))
+    print(cs(1/12 + 1/3))
+    print(cs(1/12 + 2/3))
+
+    
