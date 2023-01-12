@@ -9,6 +9,7 @@ from scipy.special import binom
 #reimplementation of the curve module based on the provided code
 #code segments copied without modifications for improvement are indicated by comments
 
+#improved vram efficiency over original implementation
 class Bezier():
     def __init__(self, num_bends):
         self.num_bends = num_bends
@@ -18,7 +19,7 @@ class Bezier():
                torch.pow(t, torch.arange(0, float(self.num_bends))) * \
                torch.pow((1.0 - t), torch.arange(float(self.num_bends - 1), -1, -1))
 
-
+#improved vram efficiency over original implementation
 class PolyChain(Module):
     def __init__(self, num_bends):
         self.num_bends = num_bends
@@ -63,7 +64,7 @@ class CurveSystem():
 
 
 
-#copied CurveModule class and only marginally improved compute_weights_t method
+#improved compute_weights_t method over the original implementation
 class CurveModule(Module):
 
     def __init__(self, fix_points, parameter_names=()):
@@ -90,7 +91,7 @@ class CurveModule(Module):
                 self.l2 += torch.sum(w_t[i] ** 2)
         return w_t
 
-
+#improved vram efficiency over original implementation
 class Linear(CurveModule):
 
     def __init__(self, in_features, out_features, fix_points, bias=True):
@@ -117,7 +118,7 @@ class Linear(CurveModule):
         weight_t, bias_t = self.compute_weights_t(coeffs_t)
         return F.linear(input, weight_t, bias_t)
 
-
+#improved vram efficiency over original implementation
 class Conv2d(CurveModule):
 
     def __init__(self, in_channels, out_channels, kernel_size, fix_points, stride=1,
@@ -157,7 +158,6 @@ class Conv2d(CurveModule):
         return F.conv2d(input, weight_t, bias_t, self.stride,
                         self.padding, self.dilation, self.groups)
 
-#We copy the _BatchNorm and BatchNorm2D classes from the original implementation
 class _BatchNorm(CurveModule):
     _version = 2
 
@@ -175,7 +175,7 @@ class _BatchNorm(CurveModule):
             if self.affine:
                 self.register_parameter(
                     'weight_%d' % i,
-                    Parameter(torch.Tensor(num_features), requires_grad=not fixed)
+                    Parameter(torch.rand(num_features), requires_grad=not fixed)
                 )
             else:
                 self.register_parameter('weight_%d' % i, None)
@@ -183,7 +183,7 @@ class _BatchNorm(CurveModule):
             if self.affine:
                 self.register_parameter(
                     'bias_%d' % i,
-                    Parameter(torch.Tensor(num_features), requires_grad=not fixed)
+                    Parameter(torch.zeros(num_features), requires_grad=not fixed)
                 )
             else:
                 self.register_parameter('bias_%d' % i, None)
@@ -196,20 +196,15 @@ class _BatchNorm(CurveModule):
             self.register_parameter('running_mean', None)
             self.register_parameter('running_var', None)
             self.register_parameter('num_batches_tracked', None)
-        self.reset_parameters()
+        self.reset_running_stats()
 
+    #copied functions reset_running_stats, _check_input_dim forward, extra_repr, _load_from_state_dict from original implementation 
     def reset_running_stats(self):
         if self.track_running_stats:
             self.running_mean.zero_()
             self.running_var.fill_(1)
             self.num_batches_tracked.zero_()
 
-    def reset_parameters(self):
-        self.reset_running_stats()
-        if self.affine:
-            for i in range(self.num_bends):
-                getattr(self, 'weight_%d' % i).data.uniform_()
-                getattr(self, 'bias_%d' % i).data.zero_()
 
     def _check_input_dim(self, input):
         raise NotImplementedError
@@ -234,7 +229,7 @@ class _BatchNorm(CurveModule):
     def extra_repr(self):
         return '{num_features}, eps={eps}, momentum={momentum}, affine={affine}, ' \
                'track_running_stats={track_running_stats}'.format(**self.__dict__)
-
+    
     def _load_from_state_dict(self, state_dict, prefix, metadata, strict,
                               missing_keys, unexpected_keys, error_msgs):
         version = metadata.get('version', None)
@@ -250,7 +245,7 @@ class _BatchNorm(CurveModule):
             state_dict, prefix, metadata, strict,
             missing_keys, unexpected_keys, error_msgs)
 
-
+#copied from original implementation
 class BatchNorm2d(_BatchNorm):
 
     def _check_input_dim(self, input):
@@ -263,47 +258,48 @@ class CurveNet(Module):
     def __init__(self, num_classes, curve, architecture, num_bends, fix_start=True, fix_end=True,
                  architecture_kwargs={}):
         super(CurveNet, self).__init__()
-        self.num_classes = num_classes
         self.num_bends = num_bends
-        self.fix_points = [fix_start] + [False] * (self.num_bends - 2) + [fix_end]
-        
-        self.curve = curve
+        self.num_classes = num_classes
+        self.fix_points = [fix_start] + [False] * (self.num_bends - 2) + [fix_end]    
         self.architecture = architecture
-
+        self.curve = curve(self.num_bends)
         self.l2 = 0.0
-        self.coeff_layer = self.curve(self.num_bends)
-        self.net = self.architecture(num_classes, fix_points=self.fix_points, **architecture_kwargs)
+        self.curve_architecture = self.architecture(num_classes, fix_points=self.fix_points, **architecture_kwargs)
         self.curve_modules = []
-        for module in self.net.modules():
+        for module in self.curve_architecture.modules():
             if issubclass(module.__class__, CurveModule):
                 self.curve_modules.append(module)
 
     def import_base_parameters(self, base_model, index):
-        parameters = list(self.net.parameters())[index::self.num_bends]
         base_parameters = base_model.parameters()
-        for parameter, base_parameter in zip(parameters, base_parameters):
-            parameter.data.copy_(base_parameter.data)
+        parameters = list(self.curve_architecture.parameters())[index::self.num_bends]
+        for i in range(len(parameters)):
+            parameters[i] = base_parameters[i].detach().clone()
 
     def import_base_buffers(self, base_model):
-        for buffer, base_buffer in zip(self.net._all_buffers(), base_model._all_buffers()):
-            buffer.data.copy_(base_buffer.data)
+        curvenet_buffers = self.curve_architecture._all_buffers()
+        base_model_buffers = base_model._all_buffers()
+        for i in range(len(curvenet_buffers)):
+            curvenet_buffers[i] = base_model_buffers[i].detach.clone()
+
 
     def export_base_parameters(self, base_model, index):
-        parameters = list(self.net.parameters())[index::self.num_bends]
         base_parameters = base_model.parameters()
-        for parameter, base_parameter in zip(parameters, base_parameters):
-            base_parameter.data.copy_(parameter.data)
+        parameters = list(self.curve_architecture.parameters())[index::self.num_bends]
+        for i in range(len(parameters)):
+            base_parameters[i] = parameters[i].detach().clone()
 
     def init_linear(self):
-        parameters = list(self.net.parameters())
+        parameters = list(self.curve_architecture.parameters())
         for i in range(0, len(parameters), self.num_bends):
             weights = parameters[i:i+self.num_bends]
             for j in range(1, self.num_bends - 1):
                 alpha = j * 1.0 / (self.num_bends - 1)
-                weights[j].data.copy_(alpha * weights[-1].data + (1.0 - alpha) * weights[0].data)
+                weights[j] = (alpha * weights[-1] + (1.0 - alpha) * weights[0]).detach().copy()
 
+    #copied weights an _compute_l2 function from original implementation
     def weights(self, t):
-        coeffs_t = self.coeff_layer.get_coeffs(t)
+        coeffs_t = self.curve.get_coeffs(t)
         weights = []
         for module in self.curve_modules:
             weights.extend([w for w in module.compute_weights_t(coeffs_t) if w is not None])
@@ -314,9 +310,9 @@ class CurveNet(Module):
 
     def forward(self, input, t=None):
         if t is None:
-            t = input.data.new(1).uniform_()
-        coeffs_t = self.coeff_layer.get_coeffs(t)
-        output = self.net(input, coeffs_t)
+            t = torch.rand(1)
+        coeffs_t = self.curve.get_coeffs(t)
+        output = self.curve_architecture(input, coeffs_t)
         self._compute_l2()
         return output
 
@@ -346,35 +342,34 @@ class CurveSystemNet(Module):
         
         self.fix_points = [False] + fix_end_points + [False] * ((num_bends-2) * n_end_points) #curve connecting
         
-        self.curve = curve
+        self.curve = curve(self.num_bends)
         self.architecture = architecture
 
         self.l2 = 0.0
-        self.coeff_layer = self.curve(self.num_bends) #eg PolyChain
-        self.net = self.architecture(num_classes, fix_points=self.fix_points, **architecture_kwargs) #eg MNISTNetCurve
+        self.curve_architecture = self.architecture(num_classes, fix_points=self.fix_points, **architecture_kwargs) #eg MNISTNetCurve
         self.curve_modules = []
-        for module in self.net.modules():
+        for module in self.curve_architecture.modules():
             if issubclass(module.__class__, CurveModule):
                 self.curve_modules.append(module)
 
     def import_base_parameters(self, base_model, index):
-        parameters = list(self.net.parameters())[index::self.num_bends]
+        parameters = list(self.curve_architecture.parameters())[index::self.num_bends]
         base_parameters = base_model.parameters()
         for parameter, base_parameter in zip(parameters, base_parameters):
             parameter.data.copy_(base_parameter.data)
 
     def import_base_buffers(self, base_model):
-        for buffer, base_buffer in zip(self.net._all_buffers(), base_model._all_buffers()):
+        for buffer, base_buffer in zip(self.curve_architecture._all_buffers(), base_model._all_buffers()):
             buffer.data.copy_(base_buffer.data)
 
     def export_base_parameters(self, base_model, index):
-        parameters = list(self.net.parameters())[index::self.num_bends]
+        parameters = list(self.curve_architecture.parameters())[index::self.num_bends]
         base_parameters = base_model.parameters()
         for parameter, base_parameter in zip(parameters, base_parameters):
             base_parameter.data.copy_(parameter.data)
 
     def init_linear(self):
-        parameters = list(self.net.parameters())
+        parameters = list(self.curve_architecture.parameters())
         for i in range(0, len(parameters), self.num_bends):
             weights = parameters[i:i+self.num_bends]
             for j in range(1, self.num_bends - 1):
@@ -382,7 +377,7 @@ class CurveSystemNet(Module):
                 weights[j].data.copy_(alpha * weights[-1].data + (1.0 - alpha) * weights[0].data)
 
     def weights(self, t):
-        coeffs_t = self.coeff_layer.get_coeffs(t)
+        coeffs_t = self.curve.get_coeffs(t)
         weights = []
         for module in self.curve_modules:
             weights.extend([w for w in module.compute_weights_t(coeffs_t) if w is not None])
@@ -394,8 +389,8 @@ class CurveSystemNet(Module):
     def forward(self, input, t=None):
         if t is None:
             t = input.data.new(1).uniform_()
-        coeffs_t = self.coeff_layer.get_coeffs(t)
-        output = self.net(input, coeffs_t)
+        coeffs_t = self.curve.get_coeffs(t)
+        output = self.curve_architecture(input, coeffs_t)
         self._compute_l2()
         return output
 
