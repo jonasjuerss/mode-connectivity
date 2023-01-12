@@ -5,7 +5,11 @@ import curves
 import data
 import models
 
-
+"""
+This tests the max observed error between two endpoints
+there is no apparent reason to use the curve module
+this script is not important
+"""
 parser = argparse.ArgumentParser(description='Test DNN curve')
 
 parser.add_argument('--dataset', type=str, default=None, metavar='DATASET',
