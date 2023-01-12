@@ -8,7 +8,8 @@ from jonas.coordinate_networks import convert_to_coord_modules
 
 class LandscapeModule(Module):
 
-    def __init__(self, architecture: Module, num_classes: int, num_dimensions: int, orthonormal_base: bool, learn_scaling_factor: bool):
+    def __init__(self, architecture: Module, num_classes: int, num_dimensions: int, orthonormal_base: bool,
+                 learn_scaling_factor: bool, initial_scale: float):
         """
 
         :param architecture: Architecture for the base networks
@@ -19,7 +20,7 @@ class LandscapeModule(Module):
         """
         super().__init__()
         self.orthonormal_base = orthonormal_base
-        self.scaling_factor = torch.tensor(1.0)
+        self.scaling_factor = torch.tensor(initial_scale, dtype=torch.float)
         self.num_classes = num_classes
         if learn_scaling_factor:
             self.scaling_factor = Parameter(self.scaling_factor)

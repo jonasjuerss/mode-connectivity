@@ -2,6 +2,7 @@ import numpy as np
 import os
 import torch
 import torch.nn.functional as F
+import wandb
 
 import curves
 
@@ -31,13 +32,15 @@ def adjust_learning_rate(optimizer, lr):
     return lr
 
 
-def save_checkpoint(dir, epoch, name='checkpoint', **kwargs):
+def save_checkpoint(dir, epoch, name='checkpoint', use_wandb=False, **kwargs):
     state = {
         'epoch': epoch,
     }
     state.update(kwargs)
     filepath = os.path.join(dir, '%s-%d.pt' % (name, epoch))
     torch.save(state, filepath)
+    if use_wandb: # Not using wandb.run to allow logging to wandb but not storing models
+        wandb.save(filepath, policy="now")
 
 
 def train(train_loader, model, optimizer, criterion, regularizer=None, lr_schedule=None):

@@ -195,7 +195,7 @@ def main(args):
 
     architecture = getattr(models, args.model)
     model = LandscapeModule(architecture, num_classes, args.landscape_dimensions, args.orthonormal_base,
-                            args.learn_scaling_factor)
+                            args.learn_scaling_factor, args.initial_scale)
     model.cuda()
 
     def learning_rate_schedule(base_lr, epoch, total_epochs):
@@ -242,6 +242,7 @@ def main(args):
     utils.save_checkpoint(
         args.dir,
         start_epoch - 1,
+        use_wandb=args.wandb_checkpoints,
         model_state=model.state_dict(),
         optimizer_state=optimizer.state_dict()
     )
@@ -293,6 +294,7 @@ def main(args):
             utils.save_checkpoint(
                 args.dir,
                 epoch,
+                use_wandb=args.wandb_checkpoints,
                 model_state=model.state_dict(),
                 optimizer_state=optimizer.state_dict()
             )
@@ -314,6 +316,7 @@ def main(args):
         utils.save_checkpoint(
             args.dir,
             args.epochs,
+            use_wandb=args.wandb_checkpoints,
             model_state=model.state_dict(),
             optimizer_state=optimizer.state_dict()
         )
@@ -405,6 +408,8 @@ if __name__ == "__main__":
                         help='Frequency with which to log multi_plots')
     parser.add_argument('--loss_clipoff', type=float, default=2.5,
                         help='The clipoff for loss. Note that Crossentropy would have no upper bound.')
+    parser.add_argument('--initial_scale', type=float, default=1,
+                        help='The initial scale for the coordinate system.')
 
     parser.set_defaults(test_only=False)
     parser.add_argument('--test_only', action='store_true', dest='test_only',
@@ -413,8 +418,18 @@ if __name__ == "__main__":
     parser.set_defaults(use_wandb=True)
     parser.add_argument('--no_wandb', action='store_false', dest='use_wandb',
                         help='Turns off logging to wandb')
+    parser.set_defaults(wandb_checkpoints=False)
+    parser.add_argument('--wandb_checkpoints', action='store_true', dest='wandb_checkpoints',
+                        help='Stores checkpoints to weights and biases.')
+    parser.add_argument('--continue_wandb', type=str, default=None,
+                        help='If this is provided, all other arguments are ignored and a run is loaded from weights and'
+                             'biases.')
 
     args = parser.parse_args()
     args.wandb_log = False  # To fix the issue Miran introduced by using his own argument name
+
+    if args.continue_wandb is not None:
+        raise NotImplementedError()
+
     args = wandb_utils.init_wandb(args)
     main(args)
