@@ -35,8 +35,14 @@ def main(args):
         args.num_bends,
         architecture_kwargs=architecture.kwargs,
     )
-    model.cuda()
-    checkpoint = torch.load(args.ckpt)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
+    if(device == "cpu"):
+        checkpoint = torch.load(args.ckpt, map_location=torch.device('cpu'))
+    else:
+        checkpoint = torch.load(args.ckpt)
+
+
     model.load_state_dict(checkpoint['model_state'])
 
     criterion = F.cross_entropy
@@ -52,19 +58,27 @@ def main(args):
     te_acc = np.zeros(T)
     tr_err = np.zeros(T)
     te_err = np.zeros(T)
-    dl = np.zeros(T) #euclidean distance from the previous point in the weight space (why not biases?)
+    dl = np.zeros(T) #euclidean distance from the previous point in the weight space (includes biases)
 
+    #measures based on test set
+    disagr_start = np.zeros(T)
+    disagr_end = np.zeros(T)
+    added_trues_start = np.zeros(T)
+    added_trues_end = np.zeros(T)
+    added_trues_all = np.zeros(T)
+    
     previous_weights = None
 
-    columns = ['t', 'Train loss', 'Train nll', 'Train error (%)', 'Test nll', 'Test error (%)']
+    columns = ['t', 'Train loss', 'Train nll', 'Train error (%)', 'Test nll', 'Test error (%)',"Disagreement t=0", "Disagreement t=1", "Added trues t=0","Added trues t=1","Added trues all"]
 
-    t = torch.FloatTensor([0.0]).cuda()
+    t = torch.tensor([0.0]).to(device)
     for i, t_value in enumerate(ts):
         t.data.fill_(t_value)
         weights = model.weights(t)
         if previous_weights is not None:
             dl[i] = np.sqrt(np.sum(np.square(weights - previous_weights)))
         previous_weights = weights.copy()
+
         utils.update_bn(loaders['train'], model, t=t)
         tr_res = utils.test_extensive(loaders['train'], model, criterion, regularizer, t=t)
         te_res = utils.test_extensive(loaders['test'], model, criterion, regularizer, t=t)
@@ -76,8 +90,13 @@ def main(args):
         te_nll[i] = te_res['nll']
         te_acc[i] = te_res['accuracy']
         te_err[i] = 100.0 - te_acc[i]
+        disagr_start[i] = te_res["disagreement_rates"][0]
+        disagr_end[i] = te_res["disagreement_rates"][1]
+        added_trues_start[i] = te_res["new_trues"][0]
+        added_trues_end[i] = te_res["new_trues"][1]
+        added_trues_all[i] = te_res["new_true_total"]
 
-        values = [t, tr_loss[i], tr_nll[i], tr_err[i], te_nll[i], te_err[i]]
+        values = [t, tr_loss[i], tr_nll[i], tr_err[i], te_nll[i], te_err[i], disagr_start[i], disagr_end[i], added_trues_start[i], added_trues_end[i], added_trues_all[i]]
         table = tabulate.tabulate([values], columns, tablefmt='simple', floatfmt='10.4f')
         if i % 40 == 0:
             table = table.split('\n')
@@ -101,12 +120,23 @@ def main(args):
     te_nll_min, te_nll_max, te_nll_avg, te_nll_int = stats(te_nll, dl)
     te_err_min, te_err_max, te_err_avg, te_err_int = stats(te_err, dl)
 
+    disagr_start_min, disagr_start_max, disagr_start_avg, disagr_start_int = stats(disagr_start, dl)
+    disagr_end_min, disagr_end_max, disagr_end_avg, disagr_end_int = stats(disagr_end, dl)
+    added_trues_start_min, added_trues_start_max, added_trues_start_avg, added_trues_start_int = stats(added_trues_start, dl)
+    added_trues_end_min, added_trues_end_max, added_trues_end_avg, added_trues_end_int = stats(added_trues_end, dl)
+    added_trues_all_min, added_trues_all_max, added_trues_all_avg, added_trues_all_int = stats(added_trues_all, dl)
+
     print('Length: %.2f' % np.sum(dl))
     print(tabulate.tabulate([
         ['train loss', tr_loss[0], tr_loss[-1], tr_loss_min, tr_loss_max, tr_loss_avg, tr_loss_int],
         ['train error (%)', tr_err[0], tr_err[-1], tr_err_min, tr_err_max, tr_err_avg, tr_err_int],
         ['test nll', te_nll[0], te_nll[-1], te_nll_min, te_nll_max, te_nll_avg, te_nll_int],
         ['test error (%)', te_err[0], te_err[-1], te_err_min, te_err_max, te_err_avg, te_err_int],
+        ['disagreement with start (%)', disagr_start[0], disagr_start[-1], disagr_start_min, disagr_start_max, disagr_start_avg, disagr_start_int],
+        ['disagreement with end (%)', disagr_end[0], disagr_end[-1], disagr_end_min, disagr_end_max, disagr_end_avg, disagr_end_int],
+        ['added trues start (%)', added_trues_start[0], added_trues_start[-1], added_trues_start_min, added_trues_start_max, added_trues_start_avg, added_trues_start_int],
+        ['added trues end (%)', added_trues_end[0], added_trues_end[-1], added_trues_end_min, added_trues_end_max, added_trues_end_avg, added_trues_end_int],
+        ['added trues over all (%)', added_trues_all[0], added_trues_all[-1], added_trues_all_min, added_trues_all_max, added_trues_all_avg, added_trues_all_int],
     ], [
         '', 'start', 'end', 'min', 'max', 'avg', 'int'
     ], tablefmt='simple', floatfmt='10.4f'))
@@ -147,6 +177,32 @@ def main(args):
         te_err_max=te_err_max,
         te_err_avg=te_err_avg,
         te_err_int=te_err_int,
+
+        disagr_start=disagr_start, 
+        disagr_start_min=disagr_start_min, 
+        disagr_start_max=disagr_start_max, 
+        disagr_start_avg=disagr_start_avg, 
+        disagr_start_int=disagr_start_int,
+        disagr_end=disagr_end,
+        disagr_end_min=disagr_end_min, 
+        disagr_end_max=disagr_end_max, 
+        disagr_end_avg=disagr_end_avg,
+        disagr_end_int=disagr_end_int,
+        added_trues_start=added_trues_start, 
+        added_trues_start_min=added_trues_start_max,
+        added_trues_start_max=added_trues_start_max, 
+        added_trues_start_avg= added_trues_start_avg,
+        added_trues_start_int=added_trues_start_int,
+        added_trues_end=added_trues_end, 
+        added_trues_end_min=added_trues_end_min, 
+        added_trues_end_max=added_trues_end_max, 
+        added_trues_end_avg=added_trues_end_avg, 
+        added_trues_end_int=added_trues_end_int,
+        added_trues_all=added_trues_all, 
+        added_trues_all_min=added_trues_all_min, 
+        added_trues_all_max=added_trues_all_max, 
+        added_trues_all_avg=added_trues_all_avg, 
+        added_trues_all_int=added_trues_all_int
     )
 
 if __name__ == "__main__":
