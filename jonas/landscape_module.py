@@ -1,4 +1,5 @@
 import abc
+from typing import List
 
 import torch.nn
 from torch.nn import Module, Parameter
@@ -9,14 +10,16 @@ from jonas.coordinate_networks import convert_to_coord_modules
 class LandscapeModule(Module):
 
     def __init__(self, architecture: Module, num_classes: int, num_dimensions: int, orthonormal_base: bool,
-                 learn_scaling_factor: bool, initial_scale: float):
+                 learn_scaling_factor: bool, initial_scale: float, modules: List[Module] = None):
         """
 
         :param architecture: Architecture for the base networks
         :param num_classes: number of classes in the dataset
         :param num_dimensions: number of dimensions of the image
         :param orthonormal_base: Whether to enforce the base to be orthonormal
-        :param learn_scaling_factor:
+        :param learn_scaling_factor: Whether to multiply all coordinates by a learned factor
+        :param initial_scale: the initial value of the learned factor
+        :param modules: an optional list of modules to use as base points. By default, new modules will be initialized
         """
         super().__init__()
         self.orthonormal_base = orthonormal_base
@@ -25,9 +28,13 @@ class LandscapeModule(Module):
         if learn_scaling_factor:
             self.scaling_factor = Parameter(self.scaling_factor)
 
-        self.coord_network = convert_to_coord_modules(*[architecture.base(num_classes=num_classes,
-                                                                          **architecture.kwargs)
-                                                        for _ in range(num_dimensions + 1)])
+        if modules is None:
+            self.coord_network = convert_to_coord_modules(*[architecture.base(num_classes=num_classes,
+                                                                              **architecture.kwargs)
+                                                            for _ in range(num_dimensions + 1)])
+        else:
+            assert num_dimensions + 1 == len(modules)
+            self.coord_network = convert_to_coord_modules(*modules)
 
     def forward(self, data, coords):
         """

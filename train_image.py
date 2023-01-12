@@ -180,8 +180,10 @@ def main(args):
         f.write('\n')
 
     torch.backends.cudnn.benchmark = True
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed(args.seed)
+
+    # This way, we will always generate the same dataset
+    torch.manual_seed(1)
+    torch.cuda.manual_seed(1)
 
     loaders, num_classes = data.loaders(
         args.dataset,
@@ -193,7 +195,17 @@ def main(args):
         args.use_test
     )
 
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed(args.seed)
+
     architecture = getattr(models, args.model)
+    if args.base_points:
+        print(f'Using endpoints {args.base_points}')
+        base_points = [architecture.base(num_classes=num_classes, **architecture.kwargs)
+                       for _ in args.base_points]
+        for i, m in enumerate(base_points):
+            m.load_state_dict(torch.load(args.base_points[i])['model_state'])
+
     model = LandscapeModule(architecture, num_classes, args.landscape_dimensions, args.orthonormal_base,
                             args.learn_scaling_factor, args.initial_scale)
     model.cuda()
@@ -228,10 +240,7 @@ def main(args):
     start_epoch = 1
     if args.resume is not None:
         print('Resume training from %s' % args.resume)
-        print("CAUTION: if you used --data_scale < 1, the data subset was random and a different subset will be taken"
-              "now. This means \"training\" plot in the begining are more like evaluation plots (depending on how"
-              "small your scale was) and if you continue training, this is not equivalent to if you had not stopped the"
-              " run!")
+        checkpoint = torch.load(args.resume)
         checkpoint = torch.load(args.resume)
         start_epoch = checkpoint['epoch'] + 1
         model.load_state_dict(checkpoint['model_state'])
@@ -355,6 +364,9 @@ if __name__ == "__main__":
                         help='turns off linear initialization of intermediate points (default: on)')
     parser.add_argument('--resume', type=str, default=None, metavar='CKPT',
                         help='checkpoint to resume training from (default: None)')
+    parser.add_argument('--base_points', nargs='+', default=[],
+                        help='Gives multiple checkpoints of separate modules to use as base points for the coordinate '
+                             'system. Make sure all of them follow the same architecture.')
 
     parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of epochs to train (default: 200)')
@@ -367,7 +379,9 @@ if __name__ == "__main__":
     parser.add_argument('--wd', type=float, default=1e-4, metavar='WD',
                         help='weight decay (default: 1e-4)')
     parser.add_argument('--dataset_scale', type=float, default=1,
-                        help='a factor in [0, 1] that allows to scale down the data used')
+                        help='A factor in [0, 1] that allows to scale down the data used. This will create a random '
+                             'subset with seed 1 (independent of --seed argument) such that the underlying dataset will'
+                             ' always be the same fo the same scale.')
 
     parser.add_argument('--seed', type=int, default=1, metavar='S', help='random seed (default: 1)')
 
