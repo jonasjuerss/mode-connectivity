@@ -195,7 +195,7 @@ def main(args):
 
     architecture = getattr(models, args.model)
     model = LandscapeModule(architecture, num_classes, args.landscape_dimensions, args.orthonormal_base,
-                            args.learn_scaling_factor)
+                            args.learn_scaling_factor, args.initial_scale)
     model.cuda()
 
     def learning_rate_schedule(base_lr, epoch, total_epochs):
@@ -408,6 +408,8 @@ if __name__ == "__main__":
                         help='Frequency with which to log multi_plots')
     parser.add_argument('--loss_clipoff', type=float, default=2.5,
                         help='The clipoff for loss. Note that Crossentropy would have no upper bound.')
+    parser.add_argument('--initial_scale', type=float, default=1,
+                        help='The initial scale for the coordinate system.')
 
     parser.set_defaults(test_only=False)
     parser.add_argument('--test_only', action='store_true', dest='test_only',
