@@ -29,12 +29,15 @@ class LandscapeModule(Module):
             self.scaling_factor = Parameter(self.scaling_factor)
 
         if modules is None:
-            self.coord_network = convert_to_coord_modules(*[architecture.base(num_classes=num_classes,
-                                                                              **architecture.kwargs)
-                                                            for _ in range(num_dimensions + 1)])
+            # Note: one might argue that subtract_origin=True would make sense here as well but both sre sensible
+            # choices, the difference shouldn't be significant and I didn't want to make changes in the middle of the
+            # experimentation phase
+            self.coord_network = convert_to_coord_modules(False, *[architecture.base(num_classes=num_classes,
+                                                                                     **architecture.kwargs)
+                                                                   for _ in range(num_dimensions + 1)])
         else:
             assert num_dimensions + 1 == len(modules)
-            self.coord_network = convert_to_coord_modules(*modules)
+            self.coord_network = convert_to_coord_modules(True, *modules)
 
     def forward(self, data, coords):
         """
