@@ -22,6 +22,7 @@ def main(args):
         args.batch_size,
         args.num_workers,
         args.transform,
+        1.0,
         args.use_test,
         shuffle_train=False
     )

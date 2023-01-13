@@ -3,7 +3,7 @@ import wandb
 
 def init_wandb(args):
     if args.use_wandb:
-        wandb.init(project="mode-connectivity", entity="camb-mphil", config=args, tags=["Jonas"])
+        wandb.init(project="mode-connectivity", entity="vlamir", config=args, tags=["Viktor"])
         return wandb.config
     return args
 
