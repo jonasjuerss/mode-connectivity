@@ -42,6 +42,10 @@ class Transforms:
         class NoTransform:
             train = transforms.ToTensor()
             test = transforms.ToTensor()
+    class FashionMNIST:
+        class NoTransform:
+            train = transforms.ToTensor()
+            test = transforms.ToTensor()
 
 
 def loaders(dataset, path, batch_size, num_workers, transform_name, scale=1.0, use_test=False,
