@@ -379,6 +379,7 @@ class CurveSystemNet(Module):
  
         """
 
+        n_end_points = len(fix_end_points)
         if(n_end_points < 2):
             raise ValueError("CurveSystems require at least two endpoints")
             
