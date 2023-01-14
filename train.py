@@ -244,5 +244,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     args = wandb_utils.init_wandb(args)
-    main(args)
+
+    try:
+        main(args)
+    except Exception as e:
+        with open("error.txt", "a") as f:
+            f.write(str(e))
+        
 
