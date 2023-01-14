@@ -199,15 +199,16 @@ def main(args):
     torch.cuda.manual_seed(args.seed)
 
     architecture = getattr(models, args.model)
+    base_modules = None
     if args.base_points:
         print(f'Using endpoints {args.base_points}')
-        base_points = [architecture.base(num_classes=num_classes, **architecture.kwargs)
-                       for _ in args.base_points]
-        for i, m in enumerate(base_points):
+        base_modules = [architecture.base(num_classes=num_classes, **architecture.kwargs)
+                        for _ in args.base_points]
+        for i, m in enumerate(base_modules):
             m.load_state_dict(torch.load(args.base_points[i])['model_state'])
 
     model = LandscapeModule(architecture, num_classes, args.landscape_dimensions, args.orthonormal_base,
-                            args.learn_scaling_factor, args.initial_scale)
+                            args.learn_scaling_factor, args.initial_scale, base_modules)
     model.cuda()
 
     def learning_rate_schedule(base_lr, epoch, total_epochs):
@@ -240,7 +241,6 @@ def main(args):
     start_epoch = 1
     if args.resume is not None:
         print('Resume training from %s' % args.resume)
-        checkpoint = torch.load(args.resume)
         checkpoint = torch.load(args.resume)
         start_epoch = checkpoint['epoch'] + 1
         model.load_state_dict(checkpoint['model_state'])
@@ -366,7 +366,8 @@ if __name__ == "__main__":
                         help='checkpoint to resume training from (default: None)')
     parser.add_argument('--base_points', nargs='+', default=[],
                         help='Gives multiple checkpoints of separate modules to use as base points for the coordinate '
-                             'system. Make sure all of them follow the same architecture.')
+                             'system. The origin will be subtracted from the other ones so the edges of the coordinate'
+                             ' system will actually be the networks. Make sure all of them follow the same architecture.')
 
     parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of epochs to train (default: 200)')

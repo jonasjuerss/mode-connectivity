@@ -6,7 +6,14 @@ import torch.nn.functional as F
 
 
 class CoordinateModule(nn.Module, abc.ABC):
-    def __init__(self, *base_modules: nn.Module):
+    def __init__(self, subtract_origin: bool, *base_modules: nn.Module):
+        """
+
+        :param subtract_origin: Whether to subtract the origin from the other modules. This leads to e.g. the
+        predictions at [1, 0] being the predictions of the second base_module only instead of origin (first base module)
+        + the second base module
+        :param base_modules:
+        """
         super().__init__()
         self.base_modules = nn.ModuleList(base_modules)
         self.ndims = len(base_modules) - 1
@@ -34,8 +41,8 @@ class CoordinateModule(nn.Module, abc.ABC):
 
 
 class CoordParameterFree(CoordinateModule):
-    def __init__(self, *base_modules: nn.Module):
-        super().__init__(*base_modules)
+    def __init__(self, subtract_origin: bool, *base_modules: nn.Module):
+        super().__init__(subtract_origin, *base_modules)
         self.base_modules = nn.ModuleList([self.base_modules[0]])  # to save memory
 
     def _forward_at(self, input: Tensor, coords: Tensor) -> Tensor:
@@ -44,8 +51,13 @@ class CoordParameterFree(CoordinateModule):
 
 class CoordLinear(CoordinateModule):
 
-    def __init__(self, *base_modules: nn.Linear):
-        super().__init__(*base_modules)
+    def __init__(self, subtract_origin: bool, *base_modules: nn.Linear):
+        super().__init__(subtract_origin, *base_modules)
+        if subtract_origin:
+            with torch.no_grad():
+                for i in range(1, len(base_modules)):
+                    base_modules[i].weight -= base_modules[0].weight
+                    base_modules[i].bias -= base_modules[0].bias
 
     def _forward_at(self, input: Tensor, coords: Tensor) -> Tensor:
         return F.linear(input,
@@ -56,8 +68,13 @@ class CoordLinear(CoordinateModule):
 
 class CoordConv2D(CoordinateModule):
 
-    def __init__(self, *base_modules: nn.Conv2d):
-        super().__init__(*base_modules)
+    def __init__(self, subtract_origin: bool, *base_modules: nn.Conv2d):
+        super().__init__(subtract_origin, *base_modules)
+        if subtract_origin:
+            with torch.no_grad():
+                for i in range(1, len(base_modules)):
+                    base_modules[i].weight -= base_modules[0].weight
+                    base_modules[i].bias -= base_modules[0].bias
 
     def _forward_at(self, input: Tensor, coords: Tensor) -> Tensor:
         return self.base_modules[0]._conv_forward(input,
@@ -71,12 +88,12 @@ class CoordConv2D(CoordinateModule):
 
 class CoordSequential(CoordinateModule):
 
-    def __init__(self, *base_modules: nn.Sequential):
-        super().__init__(*base_modules)
+    def __init__(self, subtract_origin: bool, *base_modules: nn.Sequential):
+        super().__init__(subtract_origin, *base_modules)
         self.converted_modules = nn.ModuleList()
         for i in range(len(base_modules[0])):
             cur_modules = [base_modules[j][i] for j in range(len(base_modules))]
-            self.converted_modules.append(convert_to_coord_modules(*cur_modules))
+            self.converted_modules.append(convert_to_coord_modules(subtract_origin, *cur_modules))
 
     def _forward_at(self, input: Tensor, coords: Tensor) -> Tensor:
         # Note that these asserts should be in all modules but we only put them here for efficiency
@@ -95,7 +112,7 @@ class CoordSequential(CoordinateModule):
         return input
 
 
-def convert_to_coord_modules(*modules: nn.Module) -> CoordinateModule:
+def convert_to_coord_modules(subtract_origin, *modules: nn.Module) -> CoordinateModule:
     if isinstance(modules[0], nn.Linear):
         module_type = CoordLinear
     elif isinstance(modules[0], nn.Conv2d):
@@ -113,4 +130,4 @@ def convert_to_coord_modules(*modules: nn.Module) -> CoordinateModule:
         module_type = CoordSequential
     else:
         raise NotImplementedError("Module type not supported yet:" + str(modules[0]))
-    return module_type(*modules)
+    return module_type(subtract_origin, *modules)
