@@ -71,6 +71,8 @@ def main(args):
 
     columns = ['t', 'Train loss', 'Train nll', 'Train error (%)', 'Test nll', 'Test error (%)',"Disagreement t=0", "Disagreement t=1", "Added trues t=0","Added trues t=1","Added trues all"]
 
+    evaluation_details = []
+
     t = torch.tensor([0.0]).to(device)
     for i, t_value in enumerate(ts):
         t.data.fill_(t_value)
@@ -104,6 +106,8 @@ def main(args):
         else:
             table = table.split('\n')[2]
         print(table)
+        evaluation_details.append(values)
+    evaluation_details = np.array(evaluation_details)
 
     def stats(values, dl):
         min = np.min(values)
@@ -141,6 +145,7 @@ def main(args):
         '', 'start', 'end', 'min', 'max', 'avg', 'int'
     ], tablefmt='simple', floatfmt='10.4f'))
 
+    np.savez(os.path.join(args.dir, 'curve_eval_details.npz', evaluation_details = evaluation_details))
     np.savez(
         os.path.join(args.dir, 'curve.npz'),
         ts=ts,
@@ -221,8 +226,8 @@ if __name__ == "__main__":
                         help='transform name (default: VGG)')
     parser.add_argument('--data_path', type=str, default=None, metavar='PATH',
                         help='path to datasets location (default: None)')
-    parser.add_argument('--batch_size', type=int, default=128, metavar='N',
-                        help='input batch size (default: 128)')
+    parser.add_argument('--batch_size', type=int, default=64, metavar='N',
+                        help='input batch size (default: 64)')
     parser.add_argument('--num_workers', type=int, default=4, metavar='N',
                         help='number of workers (default: 4)')
 
