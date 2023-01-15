@@ -1,1 +1,0 @@
-python3 evaluate_curve_extensive.py --dir=results/c1/eval --dataset=MNIST --data_path=data --model=MNISTNet --wd=5e-4 --transform=NoTransform --curve=PolyChain --num_bends=3 --ckpt=results/c1/checkpoint-0.pt

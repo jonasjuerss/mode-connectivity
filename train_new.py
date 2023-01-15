@@ -6,7 +6,7 @@ import time
 import torch
 import torch.nn.functional as F
 
-import curves
+import curves_new as curves
 import data
 import models
 import utils
@@ -251,6 +251,5 @@ if __name__ == "__main__":
     except Exception as e:
         with open("error.txt", "a") as f:
             f.write(str(e))
-
         
 
