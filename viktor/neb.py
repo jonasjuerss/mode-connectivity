@@ -84,7 +84,7 @@ def main():
     total_state_dict = OrderedDict(sorted(total_state_dict.items()))
 
     x = 'path_neb_1'
-    dir = f'D:\Projects\PycharmProjects\mode-connectivity\checkpoint\mnist\{x}'
+    dir = f'/viktor/checkpoint\mnist\{x}'
     if not os.path.exists(dir):
         os.makedirs(dir)
     utils.save_checkpoint(
