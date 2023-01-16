@@ -50,3 +50,24 @@ class LandscapeModule(Module):
             raise NotImplementedError()
         else:
             return self.coord_network(data, coords)
+
+class MultiLandscapeModule(Module):
+    def __init__(self, *landscape_modules: LandscapeModule):
+        super().__init__()
+        self.landscape_modules = torch.nn.ModuleList(landscape_modules)
+        self.num_classes = self.landscape_modules[0].num_classes
+
+    def forward(self, data, coords):
+        """
+        :param data: [batch_size, feature_size] (in our case of image prediction: [batch_size, image_width, image_height])
+        :param coords: [batch_size, num_dimensions] where all coords are assumed to come from the same module (coord 2
+        either all in [0, 1] or all in [2, 3], or [4, 5], or ...)
+        :return: [batch_size * num_modules, num_classes]
+        """
+        # [batch_size], should be even (e.g. 1) if on the right edge or uneven (e.g. 0) everywhere else. Therefore,
+        # 0 and 1, 2 and 3 etc will belong to the same module
+        nums_module = (coords[:, 1] / 2).to(int)
+        assert torch.all(nums_module == nums_module[0])
+
+        return self.landscape_modules[nums_module[0]](data, torch.stack((coords[:, 0],
+                                                                         coords[:, 1] - 2 * nums_module), dim=-1))

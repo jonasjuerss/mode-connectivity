@@ -210,9 +210,25 @@ class Loss2D(PixelDifference2D):
             return prediction_losses
         return torch.minimum(prediction_losses, clipoff)
 
+class NoTarget(PixelDifference2D):
+    def __init__(self):
+        super().__init__("NoTarget")
+
+    def measure_loss(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
+                     corresponding_coords: Tensor, module: LandscapeModule, compared_coords: Tensor = None,
+                     clipoff: Tensor = None):
+        return -torch.ones_like(prediction_losses).cuda()
+
+    def evaluate(self, inputs: Tensor, predictions: Tensor, labels: Tensor, prediction_losses: Tensor,
+                 corresponding_coords: Tensor, module: LandscapeModule, clipoff: Tensor = None)\
+            -> Tuple[Tensor, Tensor]:
+        # Obviously, I should rather pass the device directly during creation but efficiency is less crucial here
+        return -torch.ones(corresponding_coords.shape[0]).cuda(),\
+            torch.tensor(-1).cuda()
+
 
 __all__: List[TargetFunction] = [Euclidean2D(), CrossEntropy2D(), Loss2D(), ClassificationDifference(),
-                                 ClassificationErrorDifference()]
+                                 ClassificationErrorDifference(), NoTarget()]
 
 
 def function_from_name(name: str, args: Namespace) -> TargetFunction:
