@@ -379,17 +379,19 @@ class CurveSystemNet(Module):
  
         """
 
+        n_end_points = len(fix_end_points)
         if(n_end_points < 2):
             raise ValueError("CurveSystems require at least two endpoints")
             
         super(CurveSystemNet, self).__init__()
-        n_end_points = len(fix_end_points)
+        self.n_end_points = n_end_points 
         
         self.num_classes = num_classes
         self.num_bends = num_bends
         
         self.fix_points = [False] + fix_end_points + [False] * ((num_bends-2) * n_end_points) #curve connecting
-        
+        self.n_bends_total = len(self.fix_points)
+
         self.curve = curve
         self.architecture = architecture
 
@@ -402,7 +404,7 @@ class CurveSystemNet(Module):
                 self.curve_modules.append(module)
 
     def import_base_parameters(self, base_model, index):
-        parameters = list(self.net.parameters())[index::self.num_bends]
+        parameters = list(self.net.parameters())[index::self.n_bends_total]
         base_parameters = base_model.parameters()
         for parameter, base_parameter in zip(parameters, base_parameters):
             parameter.data.copy_(base_parameter.data)
@@ -412,17 +414,17 @@ class CurveSystemNet(Module):
             buffer.data.copy_(base_buffer.data)
 
     def export_base_parameters(self, base_model, index):
-        parameters = list(self.net.parameters())[index::self.num_bends]
+        parameters = list(self.net.parameters())[index::self.n_bends_total]
         base_parameters = base_model.parameters()
         for parameter, base_parameter in zip(parameters, base_parameters):
             base_parameter.data.copy_(parameter.data)
 
     def init_linear(self):
         parameters = list(self.net.parameters())
-        for i in range(0, len(parameters), self.num_bends):
-            weights = parameters[i:i+self.num_bends]
-            for j in range(1, self.num_bends - 1):
-                alpha = j * 1.0 / (self.num_bends - 1)
+        for i in range(0, len(parameters), self.n_bends_total):
+            weights = parameters[i:i+self.n_bends_total]
+            for j in range(1, self.n_bends_total - 1):
+                alpha = j * 1.0 / (self.n_bends_total - 1)
                 weights[j].data.copy_(alpha * weights[-1].data + (1.0 - alpha) * weights[0].data)
 
     def weights(self, t):

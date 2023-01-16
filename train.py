@@ -44,11 +44,12 @@ def main(args):
 
     if args.curve is None:
         model = architecture.base(num_classes=num_classes, **architecture.kwargs)
-    elif args.curve[-5:] == "System":
-        curve = getattr(curves, args.curve[:-5])
+    elif args.curve[-6:] == "System":
+        curve = getattr(curves, args.curve[:-6])
         model = curves.CurveSystemNet(
             num_classes,
             curve,
+            architecture.curve,
             args.num_bends,
             args.fix_end_points,
             architecture_kwargs=architecture.kwargs
@@ -237,11 +238,19 @@ if __name__ == "__main__":
                         help='Turns off logging to wandb')
     parser.add_argument('--wandb_log', action='store_true',
                         help='Turns on logging to wandb')
-    parser.add_argument('--system_end_points', nargs="+", help='path to the endpoints of a curve system')
+    parser.add_argument('--system_end_points', nargs="+", help='path to the endpoints of a curve system (e.g. -- system_end_points endpt1.pt endpt2.pt')
     parser.add_argument('--fix_end_points', nargs="+", type=int, help='boolean values indicating which endpoints can be trained with the system and which are fixed (use 1 or 0)')
     
 
     args = parser.parse_args()
     args = wandb_utils.init_wandb(args)
-    main(args)
+
+
+    try:
+        main(args)
+    except Exception as e:
+        with open("error.txt", "a") as f:
+            f.write(str(e))
+
+        
 

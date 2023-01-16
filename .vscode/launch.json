@@ -80,18 +80,100 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "--dir=results/curves/bezier-n5-n6/eval", 
+                "--dir=results/cifar10-vgg16-c-n1-n2/eval_test", 
                 "--dataset=CIFAR10", 
                 "--data_path=data", 
                 "--model=VGG16", 
                 "--wd=5e-4", 
                 "--transform=VGG", 
-                "--curve=Bezier", 
+                "--curve=PolyChain", 
                 "--num_bends=3", 
-                "--ckpt=results/curves/bezier-n5-n6/checkpoint-140.pt",
+                "--batch_size=64",
+                "--ckpt=results/cifar10-vgg16-c-n1-n2/checkpoint-600.pt",
                 "--use_test"
             ]
         },
+        {
+            "name": "curve system",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--system_end_points", "results/final/fmnist/n1/checkpoint-200.pt", "results/final/fmnist/n2/checkpoint-200.pt", "results/final/fmnist/n3/checkpoint-200.pt", "--dir=results/final/fmnist/system1-2-3", "--dataset=FashionMNIST", "--use_test", "--transform=NoTransform", "--data_path=data", "--model=MNISTNet", "--curve=PolyChainSystem", "--num_bends=3", "--epochs=600", "--lr=0.015", "--wd=5e-4", "--no_wandb"]
+        },
+
+        
+        {
+            "name": "fashionmnist mnistnet",
+            "type": "python",
+            "request": "launch",
+            "program": "train_new.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--dir=results/new_curve_test/n1",
+                "--dataset=FashionMNIST",
+                "--transform=NoTransform",
+                "--data_path=data",
+                "--model=MNISTNet",
+                "--epochs=1",
+                "--lr=0.015",
+                "--wd=5e-4",
+                "--no_wandb"
+            ]
+        },
+        {
+            "name": "fashionmnist mnistnet curve",
+            "type": "python",
+            "request": "launch",
+            "program": "train_new.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--dir=results/new_curve_test/c1",
+                "--dataset=FashionMNIST",
+                "--transform=NoTransform",
+                "--data_path=data",
+                "--model=MNISTNet",
+                "--epochs=1",
+                "--lr=0.015",
+                "--init_start=results/new_curve_test/n1/checkpoint-1.pt",
+                "--init_end=results/new_curve_test/n2/checkpoint-1.pt",
+                "--fix_start",
+                "--fix_end",
+                "--wd=5e-4",
+                "--no_wandb"
+            ]
+        },
+        {
+            "name": "fashionmnist mnistnet curvenetworks",
+            "type": "python",
+            "request": "launch",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--system_end_points",
+                 "results/new_curve_test/n1/checkpoint-1.pt",
+                 "results/new_curve_test/n2/checkpoint-1.pt",
+                 "results/new_curve_test/n3/checkpoint-1.pt",
+                 "--dir=results/new_curve_test/cn1",
+                 "--dataset=FashionMNIST",
+                 "--use_test",
+                 "--transform=NoTransform",
+                 "--data_path=data",
+                 "--model=MNISTNet",
+                 "--curve=PolyChainSystem",
+                 "--num_bends=3",
+                 "--epochs=1",
+                 "--lr=0.015",
+                 "--wd=5e-4",
+                 "--no_wandb"
+                ]
+        },
+        
         
     ]
 }

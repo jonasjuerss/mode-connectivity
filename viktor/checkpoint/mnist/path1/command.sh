@@ -1,0 +1,1 @@
+D:\Projects\PycharmProjects\mode-connectivity\train.py --dir=./checkpoint/mnist/path1 --dataset=MNIST --curve=PolyChain --data_path=./data --model=MNISTSimple --epochs=200 --lr=0.015 --wd=5e-4 --transform=NoTransform --seed 42 --init_start=checkpoint/mnist/edpt1/checkpoint-200.pt --init_end=checkpoint/mnist/edpt2/checkpoint-200.pt --fix_start --fix_end --num_bends=6
