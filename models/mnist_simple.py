@@ -1,4 +1,4 @@
-__all__ = ['MNISTSimple']
+__all__ = ['MNISTSimple', 'MNISTFC']
 
 import math
 
@@ -28,8 +28,31 @@ class MNISTSimpleBase(nn.Sequential):
                 m.weight.data.normal_(0, math.sqrt(2. / n))
                 m.bias.data.zero_()
 
+class MNISTFCBase(nn.Sequential):
+
+    def __init__(self, num_classes):
+        super(MNISTFCBase, self).__init__(
+            nn.Flatten(),
+            nn.Linear(784, 800),
+            nn.ReLU(True),
+            nn.Linear(800, num_classes)
+        )
+
+        # Initialize weights
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+                m.bias.data.zero_()
+
+
 
 class MNISTSimple:
     base = MNISTSimpleBase
+    curve = None
+    kwargs = {}
+
+class MNISTFC:
+    base = MNISTFCBase
     curve = None
     kwargs = {}

@@ -4,7 +4,7 @@ import sys
 import time
 from contextlib import nullcontext
 from datetime import datetime
-from typing import List, cast
+from typing import List, cast, Union
 
 import tabulate
 import torch
@@ -17,15 +17,15 @@ import models
 import utils
 import wandb_utils
 from jonas import target_functions
-from jonas.landscape_module import LandscapeModule
+from jonas.landscape_module import LandscapeModule, MultiLandscapeModule
 from jonas.target_functions import TargetFunction, PixelDifference2D
 from wandb_utils import log
 
 
-def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criterion: TargetFunction,
-               plot_functions: List[PixelDifference2D], multi_plot_functions: List[PixelDifference2D],
-               multi_plot_iterations, accuracy_weight, clipoff, regularizer=None, lr_schedule=None, coordinates=None,
-               train=True):
+def train_test(train_loader, model: Union[LandscapeModule, MultiLandscapeModule], optimizer,
+               landscape_criterion: TargetFunction, plot_functions: List[PixelDifference2D],
+               multi_plot_functions: List[PixelDifference2D],  multi_plot_iterations, accuracy_weight, clipoff,
+               regularizer=None, lr_schedule=None, coordinates=None, train=True):
     loss_sum = 0.0
     landscape_loss_sum = 0.0
     prediction_loss_sum = 0.0
@@ -159,7 +159,7 @@ def train_test(train_loader, model: LandscapeModule, optimizer, landscape_criter
         'prediction_loss': prediction_loss_sum / num_passes,
         'accuracy': accuracy / num_iters,
         'image': table,
-        'scaling_factor': model.scaling_factor.item()
+        'scaling_factor': model.scaling_factor.item() if hasattr(model, "scaling_factor") else -1
     }
 
     if multi_plot_functions:
@@ -239,12 +239,23 @@ def main(args):
     )
 
     start_epoch = 1
-    if args.resume is not None:
-        print('Resume training from %s' % args.resume)
-        checkpoint = torch.load(args.resume)
+    if len(args.resume) == 1:
+        print('Resume training from %s' % args.resume[0])
+        checkpoint = torch.load(args.resume[0])
         start_epoch = checkpoint['epoch'] + 1
         model.load_state_dict(checkpoint['model_state'])
         optimizer.load_state_dict(checkpoint['optimizer_state'])
+    elif len(args.resume) > 1:
+        landscape_modules = []
+        for c in args.resume:
+            m = LandscapeModule(architecture, num_classes, args.landscape_dimensions, args.orthonormal_base,
+                                args.learn_scaling_factor, args.initial_scale, base_modules)
+            m.cuda()
+            m.load_state_dict(torch.load(c)['model_state'])
+            landscape_modules.append(m)
+        model = MultiLandscapeModule(*landscape_modules)
+        model.cuda()
+
 
     columns = ['ep', 'lr', 'tr_loss', 'tr_acc', 'te_nll', 'te_acc', 'time']
 
@@ -259,6 +270,10 @@ def main(args):
     has_bn = utils.check_bn(model)
     test_res = {'loss': None, 'accuracy': None, 'nll': None}
     clipoff = torch.tensor(args.loss_clipoff).cuda()
+
+    coords_per_module = target_function.requested_coordinates
+    requested_coordinates = coords_per_module.repeat(max(1, len(args.resume)), 1)
+    requested_coordinates[:, 1] += (torch.arange(max(1, len(args.resume))) * 2).repeat_interleave(coords_per_module.shape[0]).cuda()
     for epoch in range(start_epoch, (start_epoch if args.test_only else args.epochs) + 1):
         time_ep = time.time()
 
@@ -273,7 +288,7 @@ def main(args):
         if not args.test_only:
             train_res = train_test(loaders['train'], model, optimizer, target_function, plot_functions, [],
                                    args.multi_plot_iterations, args.accuracy_weight, clipoff, regularizer,
-                                   coordinates=target_function.requested_coordinates)
+                                   coordinates=requested_coordinates)
             log_dict.update(dict(
                 scaling_factor=train_res["scaling_factor"],
 
@@ -286,7 +301,7 @@ def main(args):
             test_res = train_test(loaders['test'], model, optimizer, target_function, plot_functions,
                                   multi_plot_functions if epoch % args.multi_plot_freq == 1 else [],
                                   args.multi_plot_iterations, args.accuracy_weight, clipoff, regularizer,
-                                  coordinates=target_function.requested_coordinates, train=False)
+                                  coordinates=requested_coordinates, train=False)
             log_dict.update(dict(
                 scaling_factor=test_res["scaling_factor"],
 
@@ -362,8 +377,9 @@ if __name__ == "__main__":
     parser.set_defaults(init_linear=True)
     parser.add_argument('--init_linear_off', dest='init_linear', action='store_false',
                         help='turns off linear initialization of intermediate points (default: on)')
-    parser.add_argument('--resume', type=str, default=None, metavar='CKPT',
-                        help='checkpoint to resume training from (default: None)')
+    parser.add_argument('--resume', nargs='+', default=[], metavar='CKPT',
+                        help='Checkpoint(s) to resume training from (default: None). Multiple can be given to evaluate '
+                             'multiple coordinate systems together.')
     parser.add_argument('--base_points', nargs='+', default=[],
                         help='Gives multiple checkpoints of separate modules to use as base points for the coordinate '
                              'system. The origin will be subtracted from the other ones so the edges of the coordinate'
