@@ -42,16 +42,42 @@ def main(args):
     criterion = F.cross_entropy
 
     cross_road = architecture.base(num_classes)
-    result = []
-    for i in range(model.n_end_points + 1):
-        model.export_base_parameters(cross_road, i)
-        cross_road.cuda()
+    model.export_base_parameters(cross_road, 0)
+    cross_road.cuda()
 
-        tr_res = utils.test(loaders['train'], cross_road, criterion)
-        te_res = utils.test(loaders['test'], cross_road, criterion)
-        result.append([[tr_res["nll"], tr_res["loss"], tr_res["accuracy"] ], [te_res["nll"], te_res["loss"], te_res["accuracy"] ]])
+
+    regularizer = None
+    optimizer = torch.optim.SGD(
+        filter(lambda param: param.requires_grad, model.parameters()),
+        lr=0.05,
+        weight_decay=5e-4,
+        momentum=None
+    )
+
+    global_lr = 0.05
+    num_epochs = 100
+    
+    def learning_rate_schedule(base_lr, epoch, total_epochs):
+        alpha = epoch / total_epochs
+        if alpha <= 0.5:
+            factor = 1.0
+        elif alpha <= 0.9:
+            factor = 1.0 - (alpha - 0.5) / 0.4 * 0.99
+        else:
+            factor = 0.01
+        return factor * base_lr
+    
+    for epoch in range(num_epochs):
+        lr = learning_rate_schedule(global_lr, epoch, num_epochs)
+        utils.adjust_learning_rate(optimizer, lr)
+
+        utils.train(loaders['train'], model, optimizer, criterion, regularizer)
+
+    tr_res = utils.test(loaders['train'], cross_road, criterion)
+    te_res = utils.test(loaders['test'], cross_road, criterion)
+    result = [[tr_res["nll"], tr_res["loss"], tr_res["accuracy"] ], [te_res["nll"], te_res["loss"], te_res["accuracy"] ]])
     result = np.array(result)
-    np.savez(os.path.join(args.dir, 'final.npz'), result = result)
+    np.savez(os.path.join(args.dir, 'experimental_fix.npz'), result = result)
     print(result)
 
 if __name__ == "__main__":
