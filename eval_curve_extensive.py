@@ -107,7 +107,12 @@ def main(args):
             table = table.split('\n')[2]
         print(table)
         evaluation_details.append(values)
-    evaluation_details = np.array([x.detach().cpu().numpy() for run in evaluation_details for x in run if type(x)==torch.Tensor])
+
+    for i in range(len(evaluation_details)):
+        for j in len(evaluation_details[i]):
+            if(type(evaluation_details[i][j]) == torch.Tensor):
+                evaluation_details[i][j].detach().cpu().numpy()
+    evaluation_details = np.array(evaluation_details)
     
     def stats(values, dl):
         min = np.min(values)
