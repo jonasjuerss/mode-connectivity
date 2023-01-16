@@ -107,7 +107,7 @@ def main(args):
             table = table.split('\n')[2]
         print(table)
         evaluation_details.append(values)
-    evaluation_details = np.array([x.detach().cpu().numpy() for x in evaluation_details])
+    evaluation_details = np.array([x.detach().cpu().numpy() for run in evaluation_details for x in run])
     
     def stats(values, dl):
         min = np.min(values)
