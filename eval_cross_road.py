@@ -28,7 +28,7 @@ def main(args):
 
     architecture = getattr(models, args.model)
     curve = getattr(curves, args.curve)
-    model = curves.CurveNet(
+    model = curves.CurveSystemNet(
         num_classes,
         curve,
         architecture.curve,
