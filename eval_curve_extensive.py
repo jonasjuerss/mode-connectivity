@@ -107,8 +107,8 @@ def main(args):
             table = table.split('\n')[2]
         print(table)
         evaluation_details.append(values)
-    evaluation_details = np.array(evaluation_details)
-
+    evaluation_details = evaluation_details.detach().cpu().numpy()
+    
     def stats(values, dl):
         min = np.min(values)
         max = np.max(values)
