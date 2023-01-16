@@ -48,30 +48,18 @@ def main(args):
 
     regularizer = None
     optimizer = torch.optim.SGD(
-        filter(lambda param: param.requires_grad, model.parameters()),
-        lr=0.05,
+        filter(lambda param: param.requires_grad, cross_road.parameters()),
+        lr=0.0005,
         weight_decay=5e-4,
         momentum=0.9
     )
 
-    global_lr = 0.05
-    num_epochs = 100
-    
-    def learning_rate_schedule(base_lr, epoch, total_epochs):
-        alpha = epoch / total_epochs
-        if alpha <= 0.5:
-            factor = 1.0
-        elif alpha <= 0.9:
-            factor = 1.0 - (alpha - 0.5) / 0.4 * 0.99
-        else:
-            factor = 0.01
-        return factor * base_lr
+    num_epochs = 10
+
     
     for epoch in range(num_epochs):
-        lr = learning_rate_schedule(global_lr, epoch, num_epochs)
-        utils.adjust_learning_rate(optimizer, lr)
 
-        utils.train(loaders['train'], model, optimizer, criterion, regularizer)
+        utils.train(loaders['train'], cross_road, optimizer, criterion, regularizer)
 
     tr_res = utils.test(loaders['train'], cross_road, criterion)
     te_res = utils.test(loaders['test'], cross_road, criterion)
