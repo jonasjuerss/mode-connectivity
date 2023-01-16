@@ -42,14 +42,15 @@ def main(args):
     criterion = F.cross_entropy
 
     cross_road = architecture.base(num_classes)
-    model.export_base_parameters(cross_road, 0)
-    cross_road.cuda()
+    result = []
+    for i in range(model.n_end_points + 1):
+        model.export_base_parameters(cross_road, 0)
+        cross_road.cuda()
 
-    tr_res = utils.test(loaders['train'], cross_road, criterion)
-    te_res = utils.test(loaders['test'], cross_road, criterion)
-
-    result = np.array([[tr_res["nll"], tr_res["loss"], tr_res["accuracy"] ], [te_res["nll"], te_res["loss"], te_res["accuracy"] ]])
-    
+        tr_res = utils.test(loaders['train'], cross_road, criterion)
+        te_res = utils.test(loaders['test'], cross_road, criterion)
+        result.append([[tr_res["nll"], tr_res["loss"], tr_res["accuracy"] ], [te_res["nll"], te_res["loss"], te_res["accuracy"] ]])
+    result = np.array(result)
     np.savez(os.path.join(args.dir, 'cross_road_results.npz'), result = result)
 
 if __name__ == "__main__":
