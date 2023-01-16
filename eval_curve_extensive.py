@@ -109,7 +109,7 @@ def main(args):
         evaluation_details.append(values)
 
     for i in range(len(evaluation_details)):
-        for j in len(evaluation_details[i]):
+        for j in range(len(evaluation_details[i])):
             if(type(evaluation_details[i][j]) == torch.Tensor):
                 evaluation_details[i][j].detach().cpu().numpy()
     evaluation_details = np.array(evaluation_details)
