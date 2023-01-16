@@ -40,14 +40,13 @@ def main(args):
     model.load_state_dict(checkpoint['model_state'])
 
     criterion = F.cross_entropy
-    regularizer = curves.l2_regularizer(args.wd)
 
     cross_road = architecture.base(num_classes)
     model.export_base_parameters(cross_road, 0)
     cross_road.cuda()
 
-    tr_res = utils.test(loaders['train'], cross_road, criterion, regularizer)
-    te_res = utils.test(loaders['test'], cross_road, criterion, regularizer)
+    tr_res = utils.test(loaders['train'], cross_road, criterion)
+    te_res = utils.test(loaders['test'], cross_road, criterion)
 
     result = np.array([[tr_res["nll"], tr_res["loss"], tr_res["accuracy"] ], [te_res["nll"], te_res["loss"], te_res["accuracy"] ]])
     
