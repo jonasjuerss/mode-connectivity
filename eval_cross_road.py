@@ -75,7 +75,7 @@ def main(args):
 
     tr_res = utils.test(loaders['train'], cross_road, criterion)
     te_res = utils.test(loaders['test'], cross_road, criterion)
-    result = [[tr_res["nll"], tr_res["loss"], tr_res["accuracy"] ], [te_res["nll"], te_res["loss"], te_res["accuracy"] ]])
+    result = [[tr_res["nll"], tr_res["loss"], tr_res["accuracy"] ], [te_res["nll"], te_res["loss"], te_res["accuracy"] ]]
     result = np.array(result)
     np.savez(os.path.join(args.dir, 'experimental_fix.npz'), result = result)
     print(result)
