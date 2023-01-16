@@ -44,7 +44,7 @@ def main(args):
     cross_road = architecture.base(num_classes)
     result = []
     for i in range(model.n_end_points + 1):
-        model.export_base_parameters(cross_road, 0)
+        model.export_base_parameters(cross_road, i)
         cross_road.cuda()
 
         tr_res = utils.test(loaders['train'], cross_road, criterion)
@@ -53,7 +53,7 @@ def main(args):
     result = np.array(result)
     np.savez(os.path.join(args.dir, 'final.npz'), result = result)
     print(result)
-    
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='DNN curve evaluation')
     parser.add_argument('--dir', type=str, default='/tmp/eval', metavar='DIR',
