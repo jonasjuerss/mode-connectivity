@@ -1,0 +1,4 @@
+You are going to run models on the test set. Are you sure?
+Resume training from dir=results/final/fmnist/n10/checkpoint-160.pt
+You are going to run models on the test set. Are you sure?
+Loading results/final/fmnist/n9/checkpoint-200.pt as point #0
