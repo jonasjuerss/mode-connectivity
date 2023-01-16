@@ -98,7 +98,7 @@ def main(args):
         added_trues_end[i] = te_res["new_trues"][1]
         added_trues_all[i] = te_res["new_true_total"]
 
-        values = [t, tr_loss[i], tr_nll[i], tr_err[i], te_nll[i], te_err[i], disagr_start[i], disagr_end[i], added_trues_start[i], added_trues_end[i], added_trues_all[i]]
+        values = [t.item(), tr_loss[i], tr_nll[i], tr_err[i], te_nll[i], te_err[i], disagr_start[i], disagr_end[i], added_trues_start[i], added_trues_end[i], added_trues_all[i]]
         table = tabulate.tabulate([values], columns, tablefmt='simple', floatfmt='10.4f')
         if i % 40 == 0:
             table = table.split('\n')
@@ -108,11 +108,7 @@ def main(args):
         print(table)
         evaluation_details.append(values)
 
-    for i in range(len(evaluation_details)):
-        for j in range(len(evaluation_details[i])):
-            print(type(evaluation_details[i][j]))
-            if(type(evaluation_details[i][j]) == torch.Tensor):
-                evaluation_details[i][j].detach().cpu().numpy()
+
     evaluation_details = np.array(evaluation_details)
     
     def stats(values, dl):
