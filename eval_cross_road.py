@@ -51,7 +51,7 @@ def main(args):
         filter(lambda param: param.requires_grad, model.parameters()),
         lr=0.05,
         weight_decay=5e-4,
-        momentum=None
+        momentum=0.9
     )
 
     global_lr = 0.05
