@@ -51,8 +51,9 @@ def main(args):
         te_res = utils.test(loaders['test'], cross_road, criterion)
         result.append([[tr_res["nll"], tr_res["loss"], tr_res["accuracy"] ], [te_res["nll"], te_res["loss"], te_res["accuracy"] ]])
     result = np.array(result)
-    np.savez(os.path.join(args.dir, 'cross_road_results.npz'), result = result)
-
+    np.savez(os.path.join(args.dir, 'final.npz'), result = result)
+    print(result)
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='DNN curve evaluation')
     parser.add_argument('--dir', type=str, default='/tmp/eval', metavar='DIR',
