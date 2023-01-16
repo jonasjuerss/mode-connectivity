@@ -44,6 +44,7 @@ def main(args):
 
     cross_road = architecture.base(num_classes)
     model.export_base_parameters(cross_road, 0)
+    cross_road.cuda()
 
     tr_res = utils.test_extensive(loaders['train'], cross_road, criterion, regularizer)
     te_res = utils.test_extensive(loaders['test'], cross_road, criterion, regularizer)
