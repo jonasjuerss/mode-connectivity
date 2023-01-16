@@ -46,8 +46,8 @@ def main(args):
     model.export_base_parameters(cross_road, 0)
     cross_road.cuda()
 
-    tr_res = utils.test_extensive(loaders['train'], cross_road, criterion, regularizer)
-    te_res = utils.test_extensive(loaders['test'], cross_road, criterion, regularizer)
+    tr_res = utils.test(loaders['train'], cross_road, criterion, regularizer)
+    te_res = utils.test(loaders['test'], cross_road, criterion, regularizer)
 
     result = np.array([[tr_res["nll"], tr_res["loss"], tr_res["accuracy"] ], [te_res["nll"], te_res["loss"], te_res["accuracy"] ]])
     
