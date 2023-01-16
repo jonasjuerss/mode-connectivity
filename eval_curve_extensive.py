@@ -147,7 +147,7 @@ def main(args):
         '', 'start', 'end', 'min', 'max', 'avg', 'int'
     ], tablefmt='simple', floatfmt='10.4f'))
 
-    np.savez(os.path.join(args.dir, 'curve_eval_details.npz', evaluation_details = evaluation_details))
+    np.savez(os.path.join(args.dir, 'curve_eval_details.npz'), evaluation_details = evaluation_details)
     np.savez(
         os.path.join(args.dir, 'curve.npz'),
         ts=ts,
