@@ -1,1 +1,0 @@
-python eval_cross_road.py --dir=results/final/fmnist/system1-2-3/eval --dataset=FashionMNIST --data_path=data --model=MNISTNet --wd=5e-4 --transform=NoTransform --curve=PolyChain --num_bends=3 --batch_size=128 --ckpt=results/final/fmnist/system1-2-3/checkpoint-600.pt --use_test > results/final/fmnist/system1-2-3/eval/experimental_fix.txt
